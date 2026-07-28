@@ -258,4 +258,4 @@ class FarmaNoahApp(App):
         return layout_principal
 
 if __name__ == '__main__':
-    FarmaNoahApp().run()
+    FarmaNoahApp().run() 
