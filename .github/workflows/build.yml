@@ -1,0 +1,16 @@
+name: Compilar APK
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Compilar con Buildozer
+        uses: kivy/buildozer-action@v1
+        with:
+          command: buildozer -v android debug
+      - name: Subir APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: paquete-apk
+          path: bin/*.apk
