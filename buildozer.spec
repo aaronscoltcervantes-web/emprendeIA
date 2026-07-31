@@ -18,6 +18,9 @@ android.min_api = 21
 android.sdk = 33
 android.ndk = 25b
 
+# AGREGAR ESTA LÍNEA AQUÍ:
+android.archs = arm64-v8a
+
 # 2. Desactivadas las versiones inestables de p4a
 # p4a.branch = master
 # p4a.python_version = 3.11
