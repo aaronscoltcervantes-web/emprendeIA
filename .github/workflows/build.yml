@@ -1,12 +1,23 @@
-steps:
-  - uses: actions/checkout@v4
-  
-  - name: Set up Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: '3.11'
+name: CI
 
-  - name: Build with Buildozer
-    uses: kivy/buildozer-action@v1
-    with:
-      command: build android debug
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build with Buildozer
+        uses: kivy/buildozer-action@v1
+        with:
+          command: build android debug
