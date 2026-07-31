@@ -17,7 +17,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Configuración recomendada para Java 17 (necesario para Gradle y Android SDK)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -35,13 +34,14 @@ jobs:
       - name: Install Buildozer and pinned Cython
         run: |
           python -m pip install --upgrade pip setuptools
-          # Fijamos Cython a la versión 0.29.36 para evitar incompatibilidades con Kivy
           pip install "Cython==0.29.36"
           pip install buildozer
 
+      # CAMBIO AQUÍ: Limpiar el entorno antes de compilar
       - name: Build with Buildozer
         run: |
-          buildozer android debug
+          buildozer android clean
+          buildozer -v android debug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
