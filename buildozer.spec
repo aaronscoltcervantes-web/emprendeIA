@@ -5,7 +5,7 @@ package.domain = org.farmanoah
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt
 version = 1.0
-requirements = python3,kivy
+requirements = python3,kivy,cython
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
@@ -15,7 +15,6 @@ android.min_api = 21
 android.sdk = 33
 android.ndk = 25b
 p4a.python_version = 3.11
-p4a.branch = master
 
 [buildozer]
 log_level = 2
