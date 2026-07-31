@@ -15,6 +15,7 @@ android.min_api = 21
 android.sdk = 33
 android.ndk = 25b
 p4a.python_version = 3.11
+p4a.branch = master
 
 [buildozer]
 log_level = 2
