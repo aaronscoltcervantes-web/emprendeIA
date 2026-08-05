@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,txt
 version = 1.0
 
-requirements = python3,kivy
+requirements = python3,kivy,kivymd
 
 orientation = portrait
 fullscreen = 0
