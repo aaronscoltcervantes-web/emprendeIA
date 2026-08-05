@@ -1,10 +1,11 @@
 import sqlite3
+from datetime import datetime
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDRectangleFlatIconButton
+from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.card import MDCard
 from kivymd.uix.bottomnavigation import MDBottomNavigation, MDBottomNavigationItem
@@ -15,16 +16,17 @@ from kivy.metrics import dp, sp
 
 class FarmaNoahApp(MDApp):
     dialog = None
+    carrito = [] # [(id, nombre, precio, cantidad)]
+    total_venta = 0.0
 
     def build(self):
         self.theme_cls.primary_palette = "Teal"
         self.theme_cls.theme_style = "Dark"
 
-        # Inicializar Base de Datos SQLite
         self.init_db()
 
         screen = MDScreen()
-        top_bar = MDTopAppBar(title="FarmaNoah - Sistema POS & IA", elevation=4, pos_hint={"top": 1})
+        top_bar = MDTopAppBar(title="FarmaNoah - POS & IA", elevation=4, pos_hint={"top": 1})
         screen.add_widget(top_bar)
 
         nav = MDBottomNavigation(
@@ -40,24 +42,18 @@ class FarmaNoahApp(MDApp):
         box_caja = MDBoxLayout(orientation='vertical', padding=dp(16), spacing=dp(12))
         box_caja.add_widget(MDLabel(text="", size_hint_y=None, height=dp(50)))
 
-        self.txt_monto_inicial = MDTextField(
-            hint_text="Monto Inicial para Apertura ($)",
-            input_filter="float",
-            mode="rectangle"
-        )
+        self.txt_monto_inicial = MDTextField(hint_text="Monto Inicial para Apertura ($)", input_filter="float", mode="rectangle")
         box_caja.add_widget(self.txt_monto_inicial)
 
         btn_apertura = MDRaisedButton(
-            text="ABRIR CAJA",
-            md_bg_color=(0.2, 0.7, 0.3, 1),
-            size_hint=(1, None), height=dp(48),
-            on_release=self.abrir_caja
+            text="ABRIR CAJA", md_bg_color=(0.2, 0.7, 0.3, 1),
+            size_hint=(1, None), height=dp(48), on_release=self.abrir_caja
         )
         box_caja.add_widget(btn_apertura)
 
         self.card_caja_info = MDCard(
             orientation='vertical', padding=dp(16), spacing=dp(8),
-            size_hint=(1, None), height=dp(160), elevation=3, radius=[dp(12)]
+            size_hint=(1, None), height=dp(140), elevation=3, radius=[dp(12)]
         )
         self.lbl_estado_caja = MDLabel(text="Estado: Caja Cerrada", font_style="H6")
         self.lbl_monto_actual = MDLabel(text="Fondo Actual: $0.00", font_style="Body1")
@@ -69,7 +65,42 @@ class FarmaNoahApp(MDApp):
         item_caja.add_widget(box_caja)
 
         # ----------------------------------------------------
-        # PESTAÑA 2: INVENTARIO (AGREGAR Y LISTAR)
+        # PESTAÑA 2: VENTA CON TICKET Y CAMBIO
+        # ----------------------------------------------------
+        item_venta = MDBottomNavigationItem(name='tab_venta', text='Venta', icon='cart')
+        box_venta = MDBoxLayout(orientation='vertical', padding=dp(12), spacing=dp(8))
+        box_venta.add_widget(MDLabel(text="", size_hint_y=None, height=dp(50)))
+
+        # Selector de producto
+        self.txt_buscar_prod = MDTextField(hint_text="Nombre del producto a vender", mode="rectangle")
+        self.txt_cant_prod = MDTextField(hint_text="Cantidad", input_filter="int", mode="rectangle")
+        
+        box_venta.add_widget(self.txt_buscar_prod)
+        box_venta.add_widget(self.txt_cant_prod)
+
+        btn_add_car = MDRaisedButton(
+            text="+ AGREGAR AL CARRITO", size_hint=(1, None), height=dp(42),
+            on_release=self.agregar_al_carrito
+        )
+        box_venta.add_widget(btn_add_car)
+
+        # Resumen de Totales y Pago
+        self.lbl_total = MDLabel(text="Total a Pagar: $0.00", font_style="H6", theme_text_color="Custom", text_color=(0.2, 0.8, 0.4, 1))
+        box_venta.add_widget(self.lbl_total)
+
+        self.txt_pago_cliente = MDTextField(hint_text="Monto recibido del cliente ($)", input_filter="float", mode="rectangle")
+        box_venta.add_widget(self.txt_pago_cliente)
+
+        btn_procesar = MDRaisedButton(
+            text="PROCESAR VENTA Y GENERAR TICKET", md_bg_color=(0.1, 0.5, 0.8, 1),
+            size_hint=(1, None), height=dp(48), on_release=self.procesar_venta
+        )
+        box_venta.add_widget(btn_procesar)
+        box_venta.add_widget(MDLabel())
+        item_venta.add_widget(box_venta)
+
+        # ----------------------------------------------------
+        # PESTAÑA 3: INVENTARIO
         # ----------------------------------------------------
         item_inv = MDBottomNavigationItem(name='tab_inv', text='Inventario', icon='pill')
         box_inv = MDBoxLayout(orientation='vertical', padding=dp(16), spacing=dp(10))
@@ -84,8 +115,7 @@ class FarmaNoahApp(MDApp):
         box_inv.add_widget(self.txt_prod_stock)
 
         btn_guardar_p = MDRaisedButton(
-            text="GUARDAR EN INVENTARIO",
-            size_hint=(1, None), height=dp(48),
+            text="GUARDAR EN INVENTARIO", size_hint=(1, None), height=dp(48),
             on_release=self.guardar_producto
         )
         box_inv.add_widget(btn_guardar_p)
@@ -99,26 +129,24 @@ class FarmaNoahApp(MDApp):
         item_inv.add_widget(box_inv)
 
         # ----------------------------------------------------
-        # PESTAÑA 3: ASISTENTE IA
+        # PESTAÑA 4: ASISTENTE IA
         # ----------------------------------------------------
         item_ia = MDBottomNavigationItem(name='tab_ia', text='Asistente IA', icon='robot')
         box_ia = MDBoxLayout(orientation='vertical', padding=dp(16), spacing=dp(10))
         box_ia.add_widget(MDLabel(text="", size_hint_y=None, height=dp(50)))
 
-        self.txt_ia_pregunta = MDTextField(hint_text="Consulta stock o recomendaciones...", mode="rectangle")
+        self.txt_ia_pregunta = MDTextField(hint_text="Consulta stock o dosis de medicamentos...", mode="rectangle")
         box_ia.add_widget(self.txt_ia_pregunta)
 
         btn_consultar_ia = MDRaisedButton(
-            text="CONSULTAR A LA IA",
-            icon="send", size_hint=(1, None), height=dp(48),
+            text="CONSULTAR A LA IA", icon="send", size_hint=(1, None), height=dp(48),
             on_release=self.consultar_ia
         )
         box_ia.add_widget(btn_consultar_ia)
 
         self.lbl_ia_respuesta = MDLabel(
             text="Hola, soy Noah IA. ¿En qué te ayudo hoy con tu farmacia?",
-            theme_text_color="Secondary",
-            font_style="Body1"
+            theme_text_color="Secondary", font_style="Body1"
         )
         box_ia.add_widget(self.lbl_ia_respuesta)
         box_ia.add_widget(MDLabel())
@@ -126,6 +154,7 @@ class FarmaNoahApp(MDApp):
 
         # Agregar pestañas
         nav.add_widget(item_caja)
+        nav.add_widget(item_venta)
         nav.add_widget(item_inv)
         nav.add_widget(item_ia)
 
@@ -134,7 +163,7 @@ class FarmaNoahApp(MDApp):
         return screen
 
     # ----------------------------------------------------
-    # LÓGICA BASE DE DATOS Y EVENTOS
+    # BASE DE DATOS Y LÓGICA DE NEGOCIO
     # ----------------------------------------------------
     def init_db(self):
         conn = sqlite3.connect('farmanoah.db')
@@ -173,13 +202,13 @@ class FarmaNoahApp(MDApp):
                       (nom, float(pre), int(stk)))
             conn.commit()
             conn.close()
-            self.mostrar_alerta("Éxito", f"Producto '{nom}' guardado en inventario.")
+            self.mostrar_alerta("Éxito", f"Producto '{nom}' guardado.")
             self.txt_prod_nombre.text = ""
             self.txt_prod_precio.text = ""
             self.txt_prod_stock.text = ""
             self.cargar_productos_ui()
         else:
-            self.mostrar_alerta("Error", "Completa todos los campos del producto.")
+            self.mostrar_alerta("Error", "Completa todos los datos del producto.")
 
     def cargar_productos_ui(self):
         self.grid_inv.clear_widgets()
@@ -194,6 +223,75 @@ class FarmaNoahApp(MDApp):
             card.add_widget(MDLabel(text=f"{f[0]} - ${f[1]} (Stock: {f[2]})", font_style="Body2"))
             self.grid_inv.add_widget(card)
 
+    def agregar_al_carrito(self, instance):
+        nombre_p = self.txt_buscar_prod.text.strip()
+        cant_str = self.txt_cant_prod.text.strip()
+
+        if not nombre_p or not cant_str:
+            self.mostrar_alerta("Error", "Ingresa nombre del producto y cantidad.")
+            return
+
+        cant = int(cant_str)
+        conn = sqlite3.connect('farmanoah.db')
+        c = conn.cursor()
+        c.execute("SELECT id, nombre, precio, stock FROM productos WHERE LOWER(nombre) = ?", (nombre_p.lower(),))
+        p = c.fetchone()
+        conn.close()
+
+        if p:
+            if p[3] >= cant:
+                subtotal = p[2] * cant
+                self.carrito.append((p[0], p[1], p[2], cant, subtotal))
+                self.total_venta += subtotal
+                self.lbl_total.text = f"Total a Pagar: ${self.total_venta:.2f}"
+                self.mostrar_alerta("Carrito", f"Agregado: {p[1]} x{cant} (${subtotal:.2f})")
+                self.txt_buscar_prod.text = ""
+                self.txt_cant_prod.text = ""
+            else:
+                self.mostrar_alerta("Stock Insuficiente", f"Solo quedan {p[3]} unidades disponibles.")
+        else:
+            self.mostrar_alerta("No Encontrado", f"El producto '{nombre_p}' no existe en inventario.")
+
+    def procesar_venta(self, instance):
+        pago_str = self.txt_pago_cliente.text.strip()
+        if not self.carrito:
+            self.mostrar_alerta("Error", "El carrito está vacío.")
+            return
+        if not pago_str:
+            self.mostrar_alerta("Error", "Ingresa el pago del cliente.")
+            return
+
+        pago = float(pago_str)
+        if pago < self.total_venta:
+            self.mostrar_alerta("Pago Insuficiente", f"El pago es inferior al total (${self.total_venta:.2f}).")
+            return
+
+        cambio = pago - self.total_venta
+
+        # Actualizar stock en base de datos
+        conn = sqlite3.connect('farmanoah.db')
+        c = conn.cursor()
+        for item in self.carrito:
+            c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item[3], item[0]))
+        conn.commit()
+        conn.close()
+
+        # Generar texto de ticket
+        fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+        ticket = f"--- TICKET FARMANOAH ---\nFecha: {fecha}\n"
+        for item in self.carrito:
+            ticket += f"{item[1]} x{item[3]} = ${item[4]:.2f}\n"
+        ticket += f"------------------------\nTotal: ${self.total_venta:.2f}\nPago: ${pago:.2f}\nCambio/Vuelto: ${cambio:.2f}\n------------------------\n¡Gracias por su compra!"
+
+        self.mostrar_alerta("VENTA EXITOSA - TICKET", ticket)
+
+        # Limpiar carrito
+        self.carrito = []
+        self.total_venta = 0.0
+        self.lbl_total.text = "Total a Pagar: $0.00"
+        self.txt_pago_cliente.text = ""
+        self.cargar_productos_ui()
+
     def consultar_ia(self, instance):
         pregunta = self.txt_ia_pregunta.text.lower().strip()
         if not pregunta:
@@ -207,11 +305,11 @@ class FarmaNoahApp(MDApp):
         conn.close()
 
         if "stock" in pregunta or "inventario" in pregunta:
-            res = "Estado de inventario:\n" + "\n".join([f"• {p[0]}: {p[1]} unidades" for p in prods]) if prods else "No tienes productos en inventario."
+            res = "Estado de inventario:\n" + "\n".join([f"• {p[0]}: {p[1]} unidades" for p in prods]) if prods else "No tienes productos registrados."
         elif "paracetamol" in pregunta or "dolor" in pregunta:
-            res = "Recomendación: El paracetamol es un analgésico y antipirético común para el dolor leve a moderado. Dosis estándar adulta: 500mg-1g cada 6-8 hrs."
+            res = "Paracetamol: Analgésico y antipirético. Dosis estándar adulta: 500mg-1g cada 6-8 hrs."
         else:
-            res = f"Analizando consulta sobre '{pregunta}': Te sugiero verificar el stock registrado en la pestaña de Inventario para proceder con la venta."
+            res = f"Consulta '{pregunta}': Revisa el stock en Inventario antes de procesar la venta."
 
         self.lbl_ia_respuesta.text = f"Respuesta Noah IA:\n{res}"
 
