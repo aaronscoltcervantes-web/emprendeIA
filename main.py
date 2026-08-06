@@ -1,9 +1,9 @@
 -- 1. Tabla de Productos
 CREATE TABLE productos (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL,
-    precio_compra DECIMAL(10, 2) NOT NULL, -- Costo
-    precio_venta DECIMAL(10, 2) NOT NULL   -- Precio al público
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    precio_compra REAL NOT NULL,
+    precio_venta REAL NOT NULL
 );
 
 -- Datos de prueba
@@ -12,23 +12,24 @@ INSERT INTO productos (nombre, precio_compra, precio_venta) VALUES
 ('Ibuprofeno 400mg', 7.00, 15.00),
 ('Panadol Antigripal', 8.00, 12.00);
 
--- 2. Tabla de Ventas (Encabezado)
+-- 2. Tabla de Ventas (Con opción de pago QR o Efectivo)
 CREATE TABLE ventas (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-    total_venta DECIMAL(10, 2) NOT NULL,
-    total_ganancia DECIMAL(10, 2) NOT NULL
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT DEFAULT (datetime('now', 'localtime')),
+    total_venta REAL NOT NULL,
+    total_ganancia REAL NOT NULL,
+    metodo_pago TEXT NOT NULL CHECK(metodo_pago IN ('Efectivo', 'QR')) DEFAULT 'Efectivo'
 );
 
 -- 3. Tabla de Detalle de Ventas
 CREATE TABLE detalle_ventas (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    id_venta INT,
-    id_producto INT,
-    cantidad INT NOT NULL,
-    precio_compra_momento DECIMAL(10, 2) NOT NULL,
-    precio_venta_momento DECIMAL(10, 2) NOT NULL,
-    ganancia_linea DECIMAL(10, 2) NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_venta INTEGER,
+    id_producto INTEGER,
+    cantidad INTEGER NOT NULL,
+    precio_compra_momento REAL NOT NULL,
+    precio_venta_momento REAL NOT NULL,
+    ganancia_linea REAL NOT NULL,
     FOREIGN KEY (id_venta) REFERENCES ventas(id),
     FOREIGN KEY (id_producto) REFERENCES productos(id)
 );
