@@ -1,5 +1,7 @@
 [app]
 
+# (str) Android build-tools version to use
+android.build_tools_version = 33.0.2
 # (str) Title of your application
 title = MiAppEmprende
 
