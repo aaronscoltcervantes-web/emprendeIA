@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 
 # CORRECCIÓN 1: Agregar sqlite3 explícitamente
-requirements = python3,kivy==2.2.1,sqlite3
+requirements = python3,kivy==master,sqlite3
 
 version = 0.1
 
