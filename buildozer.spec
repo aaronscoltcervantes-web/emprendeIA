@@ -1,54 +1,26 @@
 [app]
-
-# (str) Title of your application
 title = MiAppEmprende
-
-# (str) Package name
 package.name = emprendeia
-
-# (str) Package domain (needed for android/ios packaging)
 package.domain = org.emprendeia
-
-# (str) Source code where the main.py live
 source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
 
-# (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,db
+# QUITAR sqlite3 DE ESTA LÍNEA (ya viene incluido en python3):
+requirements = python3,kivy
 
-# (list) Application requirements
-requirements = python3,kivy,hostpython3,sqlite3
-
-# (str) Custom source folders for requirements
 version = 0.1
-
-# (list) Permissions
 android.permissions = INTERNET
 
-# (int) Target Android API
+# Configuración recomendada para NDK/API en GitHub Actions:
 android.api = 33
-
-# (int) Minimum API your APK will support
 android.minapi = 21
-
-# (str) Android NDK version to use
 android.ndk = 25b
-
-# (str) Android build-tools version to use
 android.build_tools_version = 33.0.2
-
-# (bool) Accept SDK license automatically
 android.accept_sdk_license = True
 
-# (bool) Use --private data storage (True) or --dir public storage (False)
 android.private = True
-
-# (list) List of accept structures (archs)
 android.archs = arm64-v8a, armeabi-v7a
 
 [buildozer]
-
-# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
 log_level = 2
-
-# (int) Display warning if buildozer is run as root (0 = false, 1 = true)
 warn_on_root = 1
