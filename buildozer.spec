@@ -5,7 +5,7 @@ package.domain = org.emprendeia
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 
-# Deja kivy sin indicar versión para usar la receta interna de p4a
+# Usar la receta nativa interna sin fijar versión fija:
 requirements = python3,kivy
 
 version = 0.1
