@@ -1,26 +1,50 @@
 [app]
-title = FarmaNoah
-package.name = farmanoah
-package.domain = org.farmanoah
+
+# (str) Title of your application
+title = MiAppEmprende
+
+# (str) Package name
+package.name = emprendeia
+
+# (str) Package domain (needed for android/ios packaging)
+package.domain = org.emprendeia
+
+# (str) Source code where the main.py live
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,txt
-version = 1.0
 
-requirements = python3,kivy==2.3.0,kivymd,kivy_garden
+# (list) Source files to include (let empty to include all the files)
+source.include_exts = py,png,jpg,kv,atlas
 
-orientation = portrait
-fullscreen = 0
+# (list) Application requirements
+# IMPORTANTE: Dejar 'kivy' sin fijar versión y fijar cython < 3.0.0
+requirements = python3,kivy,hostpython3
+
+# (str) Custom source folders for requirements
+# version of your application
+version = 0.1
+
+# (list) Permissions
 android.permissions = INTERNET
-android.accept_sdk_license = True
-android.api = 33
-android.min_api = 21
-android.sdk = 33
-android.ndk = 25b
-android.archs = arm64-v8a
 
-# ACTIVAR ESTA LÍNEA (Quita el #):
-p4a.branch = master
+# (int) Target Android API, should be as high as possible.
+android.api = 33
+
+# (int) Minimum API your APK will support.
+android.minapi = 21
+
+# (str) Android NDK version to use
+android.ndk = 25b
+
+# (bool) Use --private data storage (True) or --dir public storage (False)
+android.private = True
+
+# (list) List of accept structures (archs)
+android.archs = arm64-v8a, armeabi-v7a
 
 [buildozer]
+
+# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
 log_level = 2
+
+# (int) Display warning if buildozer is run as root (0 = false, 1 = true)
 warn_on_root = 1
