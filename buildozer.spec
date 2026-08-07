@@ -5,13 +5,12 @@ package.domain = org.emprendeia
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 
-# QUITAR sqlite3 DE ESTA LÍNEA (ya viene incluido en python3):
-requirements = python3,kivy
+# OBLIGATORIO: Incluir hostpython3 para que Kivy se compile desde código fuente
+requirements = python3,kivy,hostpython3
 
 version = 0.1
 android.permissions = INTERNET
 
-# Configuración recomendada para NDK/API en GitHub Actions:
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
