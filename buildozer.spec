@@ -12,13 +12,13 @@ package.domain = org.ejemplo
 # (str) Source code where the main.py live
 source.dir = .
 
-# (list) Source files to include (let empty to include all the files)
+# (list) Source files to include
 source.include_exts = py,png,jpg,kv,atlas
 
 # (str) Application versioning
 version = 0.1
 
-# (list) Application requirements (Sintaxis estable)
+# (list) Application requirements
 requirements = python3,kivy
 
 # (str) Supported orientations
@@ -44,6 +44,7 @@ android.archs = arm64-v8a, armeabi-v7a
 
 # (bool) Enable AndroidX support
 android.enable_androidx = True
+
 
 [buildozer]
 
