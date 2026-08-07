@@ -29,35 +29,19 @@ jobs:
             ffmpeg \
             libsdl2-dev \
             libsdl2-image-dev \
-            libsdl2-mixin-dev \
+            libsdl2-mixer-dev \
             libsdl2-ttf-dev \
             libportmidi-dev \
             libswscale-dev \
             libavformat-dev \
             libavcodec-dev \
             zlib1g-dev \
-            libgstreamer1.0-dev \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            libsqlite3-dev \
-            sqlite3 \
-            bzip2 \
-            libbz2-dev \
-            libssl-dev \
-            openssl \
-            libgdbm-dev \
-            libgdbm-compat-dev \
-            liblzma-dev \
-            readline-common \
-            libreadline-dev \
-            libffi-dev \
-            libncursesw5-dev \
-            libdb-dev \
-            uuid-dev \
-            libasound2-dev \
             openjdk-17-jdk \
             unzip \
-            zip
+            zip \
+            ccache \
+            libffi-dev \
+            libssl-dev
 
       - name: Install Buildozer & Cython
         run: |
