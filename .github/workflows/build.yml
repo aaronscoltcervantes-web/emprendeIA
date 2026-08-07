@@ -57,6 +57,10 @@ jobs:
           pip install "cython<3.0.0"
           pip install buildozer
 
+      - name: Clean buildozer cache
+        run: |
+          rm -rf .buildozer/
+
       - name: Clear NDK environment variables
         run: |
           echo "ANDROID_NDK_HOME=" >> $GITHUB_ENV
