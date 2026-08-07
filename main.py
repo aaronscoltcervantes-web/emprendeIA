@@ -79,7 +79,8 @@ class CajaScreen(Screen):
         self.txt_monto = TextInput(hint_text="Monto en Bs", input_filter='float', multiline=False)
         layout.add_widget(self.txt_monto)
         
-        btn_apertura = Button(text="Registrar Apertura de Caja", bg_color=(0, 1, 0, 1))
+        # Corregido bg_color por background_color
+        btn_apertura = Button(text="Registrar Apertura de Caja", background_color=(0, 1, 0, 1))
         btn_apertura.bind(on_press=self.aperturar_caja)
         layout.add_widget(btn_apertura)
 
