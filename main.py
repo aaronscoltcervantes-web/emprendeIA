@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 from kivy.app import App
@@ -11,18 +12,23 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.scrollview import ScrollView
 
+# --- FUNCIÓN PARA OBTENER RUTA SEGURA DE BD EN ANDROID ---
+def get_db_path():
+    app = App.get_running_app()
+    if app and hasattr(app, 'user_data_dir'):
+        return os.path.join(app.user_data_dir, "tienda.db")
+    return "tienda.db"
+
 # --- BASE DE DATOS ---
 def init_db():
-    conn = sqlite3.connect("tienda.db")
+    conn = sqlite3.connect(get_db_path())
     cursor = conn.cursor()
-    # Tabla Productos (incluye precio compra y venta)
     cursor.execute('''CREATE TABLE IF NOT EXISTS productos (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         nombre TEXT NOT NULL,
                         precio_compra REAL NOT NULL,
                         precio_venta REAL NOT NULL,
                         stock INTEGER DEFAULT 0)''')
-    # Tabla Ventas (incluye metodo de pago como QR)
     cursor.execute('''CREATE TABLE IF NOT EXISTS ventas (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         fecha TEXT,
@@ -31,7 +37,6 @@ def init_db():
                         total REAL,
                         ganancia REAL,
                         metodo_pago TEXT)''')
-    # Tabla Caja (Apertura y Cierre)
     cursor.execute('''CREATE TABLE IF NOT EXISTS caja (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         fecha TEXT,
@@ -39,8 +44,6 @@ def init_db():
                         monto REAL)''')
     conn.commit()
     conn.close()
-
-init_db()
 
 # --- PANTALLA PRINCIPAL DE NAVEGACIÓN ---
 class MenuScreen(Screen):
@@ -79,7 +82,6 @@ class CajaScreen(Screen):
         self.txt_monto = TextInput(hint_text="Monto en Bs", input_filter='float', multiline=False)
         layout.add_widget(self.txt_monto)
         
-        # Corregido bg_color por background_color
         btn_apertura = Button(text="Registrar Apertura de Caja", background_color=(0, 1, 0, 1))
         btn_apertura.bind(on_press=self.aperturar_caja)
         layout.add_widget(btn_apertura)
@@ -90,11 +92,12 @@ class CajaScreen(Screen):
 
         self.add_widget(layout)
 
-   def aperturar_caja(self, instance):
+    # Indentación corregida aquí (4 espacios)
+    def aperturar_caja(self, instance):
         if self.txt_monto.text:
             monto = float(self.txt_monto.text)
             fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn = sqlite3.connect("tienda.db")
+            conn = sqlite3.connect(get_db_path())
             cursor = conn.cursor()
             cursor.execute("INSERT INTO caja (fecha, tipo, monto) VALUES (?, 'Apertura', ?)", (fecha, monto))
             conn.commit()
@@ -110,7 +113,7 @@ class ProductosScreen(Screen):
         
         layout.add_widget(Label(text="Registro de Productos", font_size='18sp'))
         
-        self.txt_nombre = TextInput(hint_text="Nombre del producto / prenda / medicina", multiline=False)
+        self.txt_nombre = TextInput(hint_text="Nombre del producto", multiline=False)
         self.txt_compra = TextInput(hint_text="Precio de Compra (Costo)", input_filter='float', multiline=False)
         self.txt_venta = TextInput(hint_text="Precio de Venta (Público)", input_filter='float', multiline=False)
         self.txt_stock = TextInput(hint_text="Cantidad Inicial / Stock", input_filter='int', multiline=False)
@@ -137,7 +140,7 @@ class ProductosScreen(Screen):
             venta = float(self.txt_venta.text)
             stock = int(self.txt_stock.text) if self.txt_stock.text else 0
             
-            conn = sqlite3.connect("tienda.db")
+            conn = sqlite3.connect(get_db_path())
             cursor = conn.cursor()
             cursor.execute("INSERT INTO productos (nombre, precio_compra, precio_venta, stock) VALUES (?, ?, ?, ?)",
                            (nombre, compra, venta, stock))
@@ -164,7 +167,6 @@ class VentasScreen(Screen):
         self.txt_cantidad = TextInput(hint_text="Cantidad", input_filter='int', multiline=False, text="1")
         layout.add_widget(self.txt_cantidad)
 
-        # Selección de método de pago
         layout.add_widget(Label(text="Método de Pago:"))
         self.spinner_pago = Spinner(text="Efectivo", values=("Efectivo", "QR / Transferencia"))
         layout.add_widget(self.spinner_pago)
@@ -180,8 +182,7 @@ class VentasScreen(Screen):
         self.add_widget(layout)
 
     def on_pre_enter(self):
-        # Cargar productos registrados al entrar a la pantalla
-        conn = sqlite3.connect("tienda.db")
+        conn = sqlite3.connect(get_db_path())
         cursor = conn.cursor()
         cursor.execute("SELECT nombre FROM productos")
         prods = [row[0] for row in cursor.fetchall()]
@@ -194,7 +195,7 @@ class VentasScreen(Screen):
             cant = int(self.txt_cantidad.text)
             pago = self.spinner_pago.text
             
-            conn = sqlite3.connect("tienda.db")
+            conn = sqlite3.connect(get_db_path())
             cursor = conn.cursor()
             cursor.execute("SELECT precio_compra, precio_venta, stock FROM productos WHERE nombre = ?", (prod_nombre,))
             row = cursor.fetchone()
@@ -205,10 +206,8 @@ class VentasScreen(Screen):
                 ganancia = (venta - compra) * cant
                 fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Registrar Venta
                 cursor.execute("INSERT INTO ventas (fecha, producto, cantidad, total, ganancia, metodo_pago) VALUES (?, ?, ?, ?, ?, ?)",
                                (fecha, prod_nombre, cant, total, ganancia, pago))
-                # Actualizar Stock
                 cursor.execute("UPDATE productos SET stock = stock - ? WHERE nombre = ?", (cant, prod_nombre))
                 
                 conn.commit()
@@ -227,9 +226,8 @@ class ResumenScreen(Screen):
         self.layout.clear_widgets()
         self.layout.add_widget(Label(text="Resumen Diario & Conteo de Inventario", font_size='18sp'))
         
-        # Calcular totales del día
         hoy = datetime.now().strftime("%Y-%m-%d")
-        conn = sqlite3.connect("tienda.db")
+        conn = sqlite3.connect(get_db_path())
         cursor = conn.cursor()
         
         cursor.execute("SELECT SUM(total), SUM(ganancia) FROM ventas WHERE fecha LIKE ?", (f"{hoy}%",))
@@ -237,7 +235,6 @@ class ResumenScreen(Screen):
         total_dia = res_ventas[0] if res_ventas[0] else 0.0
         ganancia_dia = res_ventas[1] if res_ventas[1] else 0.0
 
-        # Ventas por QR vs Efectivo
         cursor.execute("SELECT SUM(total) FROM ventas WHERE fecha LIKE ? AND metodo_pago = 'QR / Transferencia'", (f"{hoy}%",))
         total_qr = cursor.fetchone()[0] or 0.0
 
@@ -246,7 +243,6 @@ class ResumenScreen(Screen):
         
         self.layout.add_widget(Label(text="--- Stock Actual para Conteo Semanal ---", bold=True))
         
-        # Mostrar Inventario
         cursor.execute("SELECT nombre, stock FROM productos")
         items = cursor.fetchall()
         
@@ -277,6 +273,10 @@ class MiAppEmprende(App):
         sm.add_widget(VentasScreen(name='ventas'))
         sm.add_widget(ResumenScreen(name='resumen'))
         return sm
+    
+    def on_start(self):
+        # Inicializa la DB después de que la app arranque y tenga acceso a user_data_dir
+        init_db()
 
 if __name__ == '__main__':
     MiAppEmprende().run()
