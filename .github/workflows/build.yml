@@ -51,7 +51,8 @@ jobs:
             libtool \
             pkg-config \
             lld \
-            clang
+            clang \
+            libsqlite3-dev
 
       - name: Install Python build tools
         run: |
