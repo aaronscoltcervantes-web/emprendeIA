@@ -90,7 +90,7 @@ class CajaScreen(Screen):
 
         self.add_widget(layout)
 
-    def aperturar_caja(self, instance):
+   def aperturar_caja(self, instance):
         if self.txt_monto.text:
             monto = float(self.txt_monto.text)
             fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
