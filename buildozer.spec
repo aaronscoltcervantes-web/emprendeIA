@@ -5,7 +5,8 @@ package.domain = org.emprendeia
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 
-requirements = python3,kivy==2.2.1,hostpython3
+# Deja kivy sin indicar versión para usar la receta interna de p4a
+requirements = python3,kivy
 
 version = 0.1
 android.permissions = INTERNET
