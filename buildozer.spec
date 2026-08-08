@@ -18,8 +18,8 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning
 version = 0.1
 
-# ── FIX: versión de kivy estable con wheels disponibles ──
-requirements = python3, kivy==2.3.0
+# (list) Application requirements corregidos
+requirements = python3, kivy
 
 # (str) Supported orientations
 orientation = portrait
@@ -48,8 +48,6 @@ android.archs = arm64-v8a
 # (bool) Enable AndroidX support
 android.enable_androidx = True
 
-# ── FIX: forzar Python 3.11 (compatible con kivy==2.3.0) ──
-p4a.python_version = 3.11
 
 [buildozer]
 
