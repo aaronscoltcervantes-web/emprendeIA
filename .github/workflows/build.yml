@@ -9,51 +9,27 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04   # ← NO container, runner directo
+    runs-on: ubuntu-latest
+    container:
+      image: kivy/buildozer:latest
+      options: --user root
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      # ── FIX: Python 3.11 fijo, compatible con kivy==2.3.0 ──
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+    - name: Fix git safe directory
+      run: |
+        git config --global --add safe.directory /__w/$(echo ${{ github.repository }}/${{ github.repository }}) || true
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk \
-            python3-pip build-essential \
-            libffi-dev libssl-dev \
-            ccache libncurses5-dev \
-            libncursesw5-dev libtinfo5 \
-            cmake autoconf libtool pkg-config \
-            zlib1g-dev libltdl-dev
+    - name: Build APK with Buildozer
+      env:
+        BUILDOZER_ALLOW_ROOT: '1'
+      run: |
+        buildozer -v android debug
 
-      - name: Install Python dependencies
-        run: |
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.36
-
-      - name: Cache Buildozer global directory
-        uses: actions/cache@v3
-        with:
-          path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-
-
-      - name: Build APK with Buildozer
-        env:
-          BUILDOZER_ALLOW_ROOT: '1'
-        run: |
-          buildozer -v android debug
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-apk
-          path: bin/*.apk
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: package-apk
+        path: bin/*.apk
