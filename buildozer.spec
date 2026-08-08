@@ -18,8 +18,8 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning
 version = 0.1
 
-# (list) Application requirements
-requirements = python3, https://github.com/kivy/kivy/archive/refs/tags/2.3.0.zip
+# (list) Application requirements (usando python3.11 compatible)
+requirements = python3.11, https://github.com/kivy/kivy/archive/refs/tags/2.3.0.zip
 
 # (str) Supported orientations
 orientation = portrait
