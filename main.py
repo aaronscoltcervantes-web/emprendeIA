@@ -1,282 +1,203 @@
-import os
-import sqlite3
-from datetime import datetime
 from kivy.app import App
+from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.uix.spinner import Spinner
-from kivy.uix.popup import Popup
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.scrollview import ScrollView
+from kivy.graphics import Color, Rectangle
+from kivy.metrics import dp
 
-# --- FUNCIÓN PARA OBTENER RUTA SEGURA DE BD EN ANDROID ---
-def get_db_path():
-    app = App.get_running_app()
-    if app and hasattr(app, 'user_data_dir'):
-        return os.path.join(app.user_data_dir, "tienda.db")
-    return "tienda.db"
-
-# --- BASE DE DATOS ---
-def init_db():
-    conn = sqlite3.connect(get_db_path())
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS productos (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        nombre TEXT NOT NULL,
-                        precio_compra REAL NOT NULL,
-                        precio_venta REAL NOT NULL,
-                        stock INTEGER DEFAULT 0)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS ventas (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        fecha TEXT,
-                        producto TEXT,
-                        cantidad INTEGER,
-                        total REAL,
-                        ganancia REAL,
-                        metodo_pago TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS caja (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        fecha TEXT,
-                        tipo TEXT,
-                        monto REAL)''')
-    conn.commit()
-    conn.close()
-
-# --- PANTALLA PRINCIPAL DE NAVEGACIÓN ---
 class MenuScreen(Screen):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        super(MenuScreen, self).__init__(**kwargs)
         
-        layout.add_widget(Label(text="SISTEMA DE CONTROL DE VENTAS", font_size='20sp', bold=True))
+        # Layout principal con fondo personalizado
+        layout = BoxLayout(orientation='vertical', padding=dp(30), spacing=dp(20))
         
-        btn_caja = Button(text="1. Apertura / Cierre de Caja", size_hint_y=None, height=50)
-        btn_caja.bind(on_press=lambda x: setattr(self.manager, 'current', 'caja'))
-        layout.add_widget(btn_caja)
+        with layout.canvas.before:
+            Color(0.1, 0.1, 0.15, 1) # Fondo oscuro elegante
+            self.rect = Rectangle(size=layout.size, pos=layout.pos)
+        layout.bind(size=self._update_rect, pos=self._update_rect)
 
-        btn_prod = Button(text="2. Agregar Producto (Costo / Venta)", size_hint_y=None, height=50)
-        btn_prod.bind(on_press=lambda x: setattr(self.manager, 'current', 'productos'))
-        layout.add_widget(btn_prod)
+        # Título
+        title = Label(
+            text='Sistema de Caja\nControl Financiero', 
+            font_size=dp(24), 
+            halign='center', 
+            valign='middle',
+            bold=True
+        )
+        title.bind(size=title.setter('text_size'))
+        layout.add_widget(title)
 
-        btn_venta = Button(text="3. Registrar Venta (Efectivo / QR)", size_hint_y=None, height=50)
-        btn_venta.bind(on_press=lambda x: setattr(self.manager, 'current', 'ventas'))
-        layout.add_widget(btn_venta)
-
-        btn_resumen = Button(text="4. Resumen Diario y Conteo Semanal", size_hint_y=None, height=50)
-        btn_resumen.bind(on_press=lambda x: setattr(self.manager, 'current', 'resumen'))
-        layout.add_widget(btn_resumen)
-
-        self.add_widget(layout)
-
-# --- 1. APERTURA Y CIERRE DE CAJA ---
-class CajaScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        
-        layout.add_widget(Label(text="Control de Caja", font_size='18sp'))
-        
-        self.txt_monto = TextInput(hint_text="Monto en Bs", input_filter='float', multiline=False)
-        layout.add_widget(self.txt_monto)
-        
-        btn_apertura = Button(text="Registrar Apertura de Caja", background_color=(0, 1, 0, 1))
-        btn_apertura.bind(on_press=self.aperturar_caja)
+        # Botones de navegación
+        btn_apertura = Button(
+            text='Registrar Apertura de Caja', 
+            background_color=(0.1, 0.6, 0.2, 1),
+            font_size=dp(16)
+        )
+        btn_apertura.bind(on_press=self.ir_apertura)
         layout.add_widget(btn_apertura)
 
-        btn_volver = Button(text="Volver al Menú Principal")
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
+        btn_cierre = Button(
+            text='Registrar Cierre de Caja', 
+            background_color=(0.8, 0.2, 0.2, 1),
+            font_size=dp(16)
+        )
+        btn_cierre.bind(on_press=self.ir_cierre)
+        layout.add_widget(btn_cierre)
 
         self.add_widget(layout)
 
-    # Indentación corregida aquí (4 espacios)
-    def aperturar_caja(self, instance):
-        if self.txt_monto.text:
-            monto = float(self.txt_monto.text)
-            fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn = sqlite3.connect(get_db_path())
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO caja (fecha, tipo, monto) VALUES (?, 'Apertura', ?)", (fecha, monto))
-            conn.commit()
-            conn.close()
-            self.txt_monto.text = ""
-            Popup(title="Caja", content=Label(text=f"Apertura registrada con {monto} Bs"), size_hint=(0.8, 0.4)).open()
+    def _update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
 
-# --- 2. AGREGAR PRODUCTOS (COSTO Y VENTA) ---
-class ProductosScreen(Screen):
+    def ir_apertura(self, instance):
+        self.manager.current = 'apertura'
+
+    def ir_cierre(self, instance):
+        self.manager.current = 'cierre'
+
+
+class AperturaScreen(Screen):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        super(AperturaScreen, self).__init__(**kwargs)
         
-        layout.add_widget(Label(text="Registro de Productos", font_size='18sp'))
+        layout = BoxLayout(orientation='vertical', padding=dp(25), spacing=dp(15))
         
-        self.txt_nombre = TextInput(hint_text="Nombre del producto", multiline=False)
-        self.txt_compra = TextInput(hint_text="Precio de Compra (Costo)", input_filter='float', multiline=False)
-        self.txt_venta = TextInput(hint_text="Precio de Venta (Público)", input_filter='float', multiline=False)
-        self.txt_stock = TextInput(hint_text="Cantidad Inicial / Stock", input_filter='int', multiline=False)
+        with layout.canvas.before:
+            Color(0.12, 0.12, 0.18, 1)
+            self.rect = Rectangle(size=layout.size, pos=layout.pos)
+        layout.bind(size=self._update_rect, pos=self._update_rect)
+
+        layout.add_widget(Label(text='Apertura de Caja', font_size=dp(22), bold=True, size_hint_y=None, height=dp(50)))
+
+        layout.add_widget(Label(text='Monto Inicial en Bs:', font_size=dp(16), size_hint_y=None, height=dp(30)))
         
-        layout.add_widget(self.txt_nombre)
-        layout.add_widget(self.txt_compra)
-        layout.add_widget(self.txt_venta)
-        layout.add_widget(self.txt_stock)
-        
-        btn_guardar = Button(text="Guardar Producto")
-        btn_guardar.bind(on_press=self.guardar_producto)
+        self.input_monto = TextInput(
+            text='', 
+            hint_text='Ej. 500.00', 
+            multiline=False, 
+            input_filter='float',
+            font_size=dp(18),
+            size_hint_y=None,
+            height=dp(50)
+        )
+        layout.add_widget(self.input_monto)
+
+        self.lbl_resultado = Label(text='', font_size=dp(16), color=(0.2, 0.8, 0.3, 1))
+        layout.add_widget(self.lbl_resultado)
+
+        btn_guardar = Button(
+            text='Guardar Apertura', 
+            background_color=(0.1, 0.6, 0.2, 1),
+            size_hint_y=None,
+            height=dp(50)
+        )
+        btn_guardar.bind(on_press=self.guardar_apertura)
         layout.add_widget(btn_guardar)
 
-        btn_volver = Button(text="Volver al Menú Principal")
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
+        btn_volver = Button(
+            text='Volver al Menú', 
+            background_color=(0.4, 0.4, 0.4, 1),
+            size_hint_y=None,
+            height=dp(50)
+        )
+        btn_volver.bind(on_press=self.volver_menu)
         layout.add_widget(btn_volver)
 
         self.add_widget(layout)
 
-    def guardar_producto(self, instance):
-        if self.txt_nombre.text and self.txt_compra.text and self.txt_venta.text:
-            nombre = self.txt_nombre.text
-            compra = float(self.txt_compra.text)
-            venta = float(self.txt_venta.text)
-            stock = int(self.txt_stock.text) if self.txt_stock.text else 0
-            
-            conn = sqlite3.connect(get_db_path())
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO productos (nombre, precio_compra, precio_venta, stock) VALUES (?, ?, ?, ?)",
-                           (nombre, compra, venta, stock))
-            conn.commit()
-            conn.close()
-            
-            self.txt_nombre.text = ""
-            self.txt_compra.text = ""
-            self.txt_venta.text = ""
-            self.txt_stock.text = ""
-            Popup(title="Éxito", content=Label(text="Producto registrado correctamente"), size_hint=(0.8, 0.4)).open()
+    def _update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
 
-# --- 3. VENTAS (PAGO CON QR O EFECTIVO) ---
-class VentasScreen(Screen):
+    def guardar_apertura(self, instance):
+        monto = self.input_monto.text
+        if monto:
+            self.lbl_resultado.text = f'¡Apertura registrada con éxito: {monto} Bs!'
+        else:
+            self.lbl_resultado.text = 'Por favor ingrese un monto válido.'
+
+    def volver_menu(self, instance):
+        self.lbl_resultado.text = ''
+        self.input_monto.text = ''
+        self.manager.current = 'menu'
+
+
+class CierreScreen(Screen):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        super(CierreScreen, self).__init__(**kwargs)
         
-        layout.add_widget(Label(text="Registrar Venta", font_size='18sp'))
+        layout = BoxLayout(orientation='vertical', padding=dp(25), spacing=dp(12))
         
-        self.spinner_prod = Spinner(text="Seleccionar Producto", values=())
-        layout.add_widget(self.spinner_prod)
-        
-        self.txt_cantidad = TextInput(hint_text="Cantidad", input_filter='int', multiline=False, text="1")
-        layout.add_widget(self.txt_cantidad)
+        with layout.canvas.before:
+            Color(0.12, 0.12, 0.18, 1)
+            self.rect = Rectangle(size=layout.size, pos=layout.pos)
+        layout.bind(size=self._update_rect, pos=self._update_rect)
 
-        layout.add_widget(Label(text="Método de Pago:"))
-        self.spinner_pago = Spinner(text="Efectivo", values=("Efectivo", "QR / Transferencia"))
-        layout.add_widget(self.spinner_pago)
-        
-        btn_vender = Button(text="Completar Venta")
-        btn_vender.bind(on_press=self.realizar_venta)
-        layout.add_widget(btn_vender)
+        layout.add_widget(Label(text='Cierre de Caja', font_size=dp(22), bold=True, size_hint_y=None, height=dp(40)))
 
-        btn_volver = Button(text="Volver al Menú Principal")
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
+        layout.add_widget(Label(text='Efectivo Total Contado (Bs):', font_size=dp(15), size_hint_y=None, height=dp(25)))
+        self.input_efectivo = TextInput(hint_text='0.00', multiline=False, input_filter='float', size_hint_y=None, height=dp(45))
+        layout.add_widget(self.input_efectivo)
+
+        layout.add_widget(Label(text='Ventas por QR / Transferencia (Bs):', font_size=dp(15), size_hint_y=None, height=dp(25)))
+        self.input_qr = TextInput(hint_text='0.00', multiline=False, input_filter='float', size_hint_y=None, height=dp(45))
+        layout.add_widget(self.input_qr)
+
+        self.lbl_resumen = Label(text='', font_size=dp(15), color=(0.9, 0.9, 0.2, 1), size_hint_y=None, height=dp(40))
+        layout.add_widget(self.lbl_resumen)
+
+        btn_procesar = Button(
+            text='Calcular y Registrar Cierre', 
+            background_color=(0.8, 0.2, 0.2, 1),
+            size_hint_y=None,
+            height=dp(50)
+        )
+        btn_procesar.bind(on_press=self.procesar_cierre)
+        layout.add_widget(btn_procesar)
+
+        btn_volver = Button(
+            text='Volver al Menú', 
+            background_color=(0.4, 0.4, 0.4, 1),
+            size_hint_y=None,
+            height=dp(50)
+        )
+        btn_volver.bind(on_press=self.volver_menu)
         layout.add_widget(btn_volver)
 
         self.add_widget(layout)
 
-    def on_pre_enter(self):
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
-        cursor.execute("SELECT nombre FROM productos")
-        prods = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        self.spinner_prod.values = prods
+    def _update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
 
-    def realizar_venta(self, instance):
-        prod_nombre = self.spinner_prod.text
-        if prod_nombre != "Seleccionar Producto" and self.txt_cantidad.text:
-            cant = int(self.txt_cantidad.text)
-            pago = self.spinner_pago.text
-            
-            conn = sqlite3.connect(get_db_path())
-            cursor = conn.cursor()
-            cursor.execute("SELECT precio_compra, precio_venta, stock FROM productos WHERE nombre = ?", (prod_nombre,))
-            row = cursor.fetchone()
-            
-            if row:
-                compra, venta, stock = row
-                total = venta * cant
-                ganancia = (venta - compra) * cant
-                fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                cursor.execute("INSERT INTO ventas (fecha, producto, cantidad, total, ganancia, metodo_pago) VALUES (?, ?, ?, ?, ?, ?)",
-                               (fecha, prod_nombre, cant, total, ganancia, pago))
-                cursor.execute("UPDATE productos SET stock = stock - ? WHERE nombre = ?", (cant, prod_nombre))
-                
-                conn.commit()
-                conn.close()
-                
-                Popup(title="Venta Exitosa", content=Label(text=f"Total: {total} Bs\nPago con: {pago}"), size_hint=(0.8, 0.4)).open()
+    def procesar_cierre(self, instance):
+        try:
+            efectivo = float(self.input_efectivo.text) if self.input_efectivo.text else 0.0
+            qr = float(self.input_qr.text) if self.input_qr.text else 0.0
+            total = efectivo + qr
+            self.lbl_resumen.text = f'Total General en Caja: {total:.2f} Bs (Efectivo: {efectivo} | QR: {qr})'
+        except ValueError:
+            self.lbl_resumen.text = 'Ingrese valores numéricos válidos.'
 
-# --- 4. RESUMEN Y CONTEO SEMANAL ---
-class ResumenScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        self.add_widget(self.layout)
+    def volver_menu(self, instance):
+        self.lbl_resumen.text = ''
+        self.input_efectivo.text = ''
+        self.input_qr.text = ''
+        self.manager.current = 'menu'
 
-    def on_pre_enter(self):
-        self.layout.clear_widgets()
-        self.layout.add_widget(Label(text="Resumen Diario & Conteo de Inventario", font_size='18sp'))
-        
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT SUM(total), SUM(ganancia) FROM ventas WHERE fecha LIKE ?", (f"{hoy}%",))
-        res_ventas = cursor.fetchone()
-        total_dia = res_ventas[0] if res_ventas[0] else 0.0
-        ganancia_dia = res_ventas[1] if res_ventas[1] else 0.0
 
-        cursor.execute("SELECT SUM(total) FROM ventas WHERE fecha LIKE ? AND metodo_pago = 'QR / Transferencia'", (f"{hoy}%",))
-        total_qr = cursor.fetchone()[0] or 0.0
-
-        self.layout.add_widget(Label(text=f"Ventas Hoy: {total_dia:.2f} Bs | En QR: {total_qr:.2f} Bs"))
-        self.layout.add_widget(Label(text=f"Ganancia Neta Hoy: {ganancia_dia:.2f} Bs", color=(0, 1, 0, 1)))
-        
-        self.layout.add_widget(Label(text="--- Stock Actual para Conteo Semanal ---", bold=True))
-        
-        cursor.execute("SELECT nombre, stock FROM productos")
-        items = cursor.fetchall()
-        
-        scroll = ScrollView()
-        grid = GridLayout(cols=2, size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
-        
-        for name, stock in items:
-            grid.add_widget(Label(text=name, size_hint_y=None, height=30))
-            grid.add_widget(Label(text=f"Stock: {stock}", size_hint_y=None, height=30))
-            
-        scroll.add_widget(grid)
-        self.layout.add_widget(scroll)
-        
-        conn.close()
-
-        btn_volver = Button(text="Volver al Menú Principal", size_hint_y=None, height=40)
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        self.layout.add_widget(btn_volver)
-
-# --- APLICACIÓN PRINCIPAL ---
-class MiAppEmprende(App):
+class MyApp(App):
     def build(self):
         sm = ScreenManager()
         sm.add_widget(MenuScreen(name='menu'))
-        sm.add_widget(CajaScreen(name='caja'))
-        sm.add_widget(ProductosScreen(name='productos'))
-        sm.add_widget(VentasScreen(name='ventas'))
-        sm.add_widget(ResumenScreen(name='resumen'))
+        sm.add_widget(AperturaScreen(name='apertura'))
+        sm.add_widget(CierreScreen(name='cierre'))
         return sm
-    
-    def on_start(self):
-        # Inicializa la DB después de que la app arranque y tenga acceso a user_data_dir
-        init_db()
 
 if __name__ == '__main__':
-    MiAppEmprende().run()
+    MyApp().run()
