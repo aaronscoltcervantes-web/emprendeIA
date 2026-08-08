@@ -9,7 +9,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.graphics import Color, RoundedRectangle
+from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.metrics import dp
 
 DATA_FILE = "sistema_negocio_data.json"
@@ -62,111 +62,136 @@ class GlobalData:
     gastos_caja = datos["gastos_caja"]
     carrito = []
 
-class DashboardScreen(Screen):
-    def __init__(self, **kwargs):
-        super(DashboardScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
+class RoundedCard(BoxLayout):
+    def __init__(self, bg_color=(0.12, 0.13, 0.16, 1), radius=[dp(12)], **kwargs):
+        super(RoundedCard, self).__init__(**kwargs)
+        self.bg_color = bg_color
+        self.radius_val = radius
+        with self.canvas.before:
+            Color(*self.bg_color)
+            self.rect = RoundedRectangle(size=self.size, pos=self.pos, radius=self.radius_val)
+        self.bind(size=self._update_canvas, pos=self._update_canvas)
+
+    def _update_canvas(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
+
+class BottomNavBar(BoxLayout):
+    def __init__(self, screen_manager, **kwargs):
+        super(BottomNavBar, self).__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(65)
+        self.sm = screen_manager
         
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
+        with self.canvas.before:
+            Color(0.09, 0.10, 0.13, 1)
+            self.rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[0])
+        self.bind(size=self._update_rect, pos=self._update_rect)
 
-        # Header
-        header = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(75), spacing=dp(3))
-        header.add_widget(Label(text='SISTEMA COMERCIAL PRO', font_size=dp(20), bold=True, color=(1,1,1,1)))
-        self.lbl_estado = Label(text='Estado de Caja: CERRADA', font_size=dp(13), color=(0.9, 0.3, 0.3, 1), bold=True)
-        header.add_widget(self.lbl_estado)
-        layout.add_widget(header)
+        self.add_nav_button('Caja', 'caja')
+        self.add_nav_button('Venta', 'venta')
+        self.add_nav_button('Inventario', 'inventario')
+        self.add_nav_button('Resumen', 'resumen')
 
-        # Menú de Opciones en ScrollView para que quepa todo perfecto
-        scroll_menu = ScrollView(size_hint=(1, 1))
-        grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
-        grid.bind(minimum_height=grid.setter('height'))
-
-        grid.add_widget(self.crear_Boton('1. Control de Caja (Apertura / Cierre)', (0.15, 0.5, 0.25, 1), lambda x: setattr(self.manager, 'current', 'caja')))
-        grid.add_widget(self.crear_Boton('2. Ver Inventario y Stock', (0.2, 0.4, 0.6, 1), lambda x: setattr(self.manager, 'current', 'inventario')))
-        grid.add_widget(self.crear_Boton('3. Ingresar Producto / Compras', (0.7, 0.4, 0.1, 1), lambda x: setattr(self.manager, 'current', 'ingreso')))
-        grid.add_widget(self.crear_Boton('4. Realizar Venta (POS Rápido)', (0.8, 0.2, 0.2, 1), lambda x: setattr(self.manager, 'current', 'venta')))
-        grid.add_widget(self.crear_Boton('5. Registrar Gasto / Retiro de Caja', (0.6, 0.2, 0.6, 1), lambda x: setattr(self.manager, 'current', 'gasto')))
-        grid.add_widget(self.crear_Boton('6. Historial de Ventas', (0.3, 0.5, 0.5, 1), lambda x: setattr(self.manager, 'current', 'historial')))
-        grid.add_widget(self.crear_Boton('7. Resumen Financiero y Ganancias', (0.35, 0.35, 0.4, 1), lambda x: setattr(self.manager, 'current', 'resumen')))
-
-        scroll_menu.add_widget(grid)
-        layout.add_widget(scroll_menu)
-        self.add_widget(layout)
-
-    def on_enter(self):
-        if GlobalData.caja_abierta:
-            total_gastos = sum(g['monto'] for g in GlobalData.gastos_caja)
-            efectivo_en_caja = GlobalData.monto_inicial + GlobalData.total_ventas_efectivo - total_gastos
-            self.lbl_estado.text = f'Caja ABIERTA | Efectivo físico: {efectivo_en_caja:.2f} Bs'
-            self.lbl_estado.color = (0.2, 0.8, 0.3, 1)
-        else:
-            self.lbl_estado.text = 'Estado de Caja: CERRADA'
-            self.lbl_estado.color = (0.9, 0.3, 0.3, 1)
-
-    def crear_Boton(self, texto, color, callback):
-        btn = Button(text=texto, font_size=dp(14), bold=True, background_normal='', background_color=color, size_hint_y=None, height=dp(50))
-        btn.bind(on_press=callback)
-        return btn
+    def add_nav_button(self, text, screen_name):
+        btn = Button(
+            text=text,
+            font_size=dp(12),
+            bold=True,
+            background_normal='',
+            background_color=(0, 0, 0, 0),
+            color=(0.7, 0.7, 0.8, 1)
+        )
+        btn.bind(on_press=lambda x: setattr(self.sm, 'current', screen_name))
+        self.add_widget(btn)
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
+class BaseScreen(Screen):
+    def __init__(self, **kwargs):
+        super(BaseScreen, self).__init__(**kwargs)
+        self.main_layout = BoxLayout(orientation='vertical')
+        with self.main_layout.canvas.before:
+            Color(0.06, 0.07, 0.09, 1)
+            self.rect = RoundedRectangle(size=self.main_layout.size, pos=self.main_layout.pos, radius=[0])
+        self.main_layout.bind(size=self._update_rect, pos=self._update_rect)
+        self.content_layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(12))
+        self.main_layout.add_widget(self.content_layout)
+        self.add_widget(self.main_layout)
 
-class CajaScreen(Screen):
+    def _update_rect(self, instance, value):
+        self.rect.pos = instance.pos
+        self.rect.size = instance.size
+
+class CajaScreen(BaseScreen):
     def __init__(self, **kwargs):
         super(CajaScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12))
         
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
+        self.content_layout.add_widget(Label(text='Control de Caja', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
-        layout.add_widget(Label(text='Módulo de Apertura y Cierre de Caja', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
-        
-        self.lbl_info_estado = Label(text='', font_size=dp(13), color=(0.9, 0.9, 0.2, 1), size_hint_y=None, height=dp(55), halign='center', valign='middle')
-        self.lbl_info_estado.bind(size=self.lbl_info_estado.setter('text_size'))
-        layout.add_widget(self.lbl_info_estado)
+        # Input Card Estilo Imagen
+        self.input_monto = TextInput(
+            hint_text='Monto Inicial para Apertura (Bs)', 
+            multiline=False, 
+            input_filter='float', 
+            font_size=dp(14), 
+            size_hint_y=None, 
+            height=dp(50),
+            background_color=(0.12, 0.13, 0.16, 1),
+            foreground_color=(1,1,1,1),
+            cursor_color=(1,1,1,1),
+            padding=[dp(15), dp(15)]
+        )
+        self.content_layout.add_widget(self.input_monto)
 
-        self.lbl_prompt = Label(text='Monto:', font_size=dp(13), size_hint_y=None, height=dp(20))
-        layout.add_widget(self.lbl_prompt)
-
-        self.input_monto = TextInput(hint_text='0.00', multiline=False, input_filter='float', font_size=dp(16), size_hint_y=None, height=dp(42))
-        layout.add_widget(self.input_monto)
-
-        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(55), halign='center')
-        self.lbl_msg.bind(size=self.lbl_msg.setter('text_size'))
-        layout.add_widget(self.lbl_msg)
-
-        self.btn_accion = Button(text='', font_size=dp(15), bold=True, background_normal='', size_hint_y=None, height=dp(45))
+        self.btn_accion = Button(
+            text='ABRIR CAJA', 
+            font_size=dp(15), 
+            bold=True, 
+            background_normal='', 
+            background_color=(0.18, 0.7, 0.35, 1), 
+            size_hint_y=None, 
+            height=dp(50)
+        )
         self.btn_accion.bind(on_press=self.ejecutar_accion)
-        layout.add_widget(self.btn_accion)
+        self.content_layout.add_widget(self.btn_accion)
 
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(42))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
+        # Tarjeta de Estado (Idéntica a la imagen de referencia)
+        self.card_estado = RoundedCard(orientation='vertical', padding=dp(15), spacing=dp(8), size_hint_y=None, height=dp(130), bg_color=(0.12, 0.13, 0.16, 1))
+        self.lbl_estado = Label(text='Estado: Caja Cerrada', font_size=dp(15), bold=True, color=(1,1,1,1), halign='left', valgin='middle')
+        self.lbl_estado.bind(size=self.lbl_estado.setter('text_size'))
+        self.card_estado.add_widget(self.lbl_estado)
 
-        layout.add_widget(Label())
-        self.add_widget(layout)
+        self.lbl_fondo = Label(text='Fondo Actual: 0.00 Bs', font_size=dp(14), color=(0.8, 0.8, 0.8, 1), halign='left', valgin='middle')
+        self.lbl_fondo.bind(size=self.lbl_fondo.setter('text_size'))
+        self.card_estado.add_widget(self.lbl_fondo)
+        
+        self.content_layout.add_widget(self.card_estado)
+
+        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(30))
+        self.content_layout.add_widget(self.lbl_msg)
+        
+        self.content_layout.add_widget(Label())
 
     def on_enter(self):
         self.lbl_msg.text = ''
         self.input_monto.text = ''
         if not GlobalData.caja_abierta:
-            self.lbl_info_estado.text = 'La caja está CERRADA. Ingrese el dinero en efectivo con el que inicia el día.'
-            self.lbl_prompt.text = 'Monto Inicial en Efectivo (Bs):'
-            self.btn_accion.text = 'Registrar Apertura de Caja'
-            self.btn_accion.background_color = (0.15, 0.5, 0.25, 1)
+            self.lbl_estado.text = 'Estado: Caja Cerrada'
+            self.lbl_fondo.text = 'Fondo Actual: 0.00 Bs'
+            self.input_monto.hint_text = 'Monto Inicial para Apertura (Bs)'
+            self.btn_accion.text = 'ABRIR CAJA'
+            self.btn_accion.background_color = (0.18, 0.7, 0.35, 1)
         else:
             total_gastos = sum(g['monto'] for g in GlobalData.gastos_caja)
             efectivo_esperado = GlobalData.monto_inicial + GlobalData.total_ventas_efectivo - total_gastos
-            self.lbl_info_estado.text = f'Caja Abierta.\nEfectivo esperado: {efectivo_esperado:.2f} Bs (Inicial: {GlobalData.monto_inicial} + Ventas Efectivo: {GlobalData.total_ventas_efectivo} - Gastos: {total_gastos})'
-            self.lbl_prompt.text = 'Conteo exacto del efectivo físico contado (Bs):'
-            self.btn_accion.text = 'Registrar Cierre de Caja'
+            self.lbl_estado.text = 'Estado: Caja Abierta'
+            self.lbl_fondo.text = f'Efectivo en Caja: {efectivo_esperado:.2f} Bs'
+            self.input_monto.hint_text = 'Conteo exacto para Cierre (Bs)'
+            self.btn_accion.text = 'CERRAR CAJA'
             self.btn_accion.background_color = (0.8, 0.2, 0.2, 1)
 
     def ejecutar_accion(self, instance):
@@ -181,7 +206,7 @@ class CajaScreen(Screen):
                 GlobalData.historial_ventas = []
                 GlobalData.gastos_caja = []
                 guardar_datos()
-                self.lbl_msg.text = f'¡Apertura registrada con éxito con {monto:.2f} Bs!'
+                self.lbl_msg.text = '¡Caja abierta correctamente!'
                 self.on_enter()
             else:
                 total_gastos = sum(g['monto'] for g in GlobalData.gastos_caja)
@@ -189,187 +214,48 @@ class CajaScreen(Screen):
                 diferencia = monto - efectivo_esperado
                 GlobalData.caja_abierta = False
                 guardar_datos()
-                
-                estado_dif = "Cuadre exacto (Sin diferencia)"
-                if diferencia > 0:
-                    estado_dif = f"Sobrante de +{diferencia:.2f} Bs"
-                elif diferencia < 0:
-                    estado_dif = f"Faltante de {diferencia:.2f} Bs"
-
-                self.lbl_msg.text = f'Cierre exitoso.\nContado: {monto} Bs | Esperado: {efectivo_esperado:.2f} Bs\nResultado: {estado_dif}'
+                dif_txt = f" (Dif: {diferencia:+.2f} Bs)"
+                self.lbl_msg.text = f'Cierre exitoso. Contado: {monto}{dif_txt}'
+                self.on_enter()
         except ValueError:
             self.lbl_msg.text = 'Ingrese un valor numérico válido.'
 
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-
-class InventarioScreen(Screen):
-    def __init__(self, **kwargs):
-        super(InventarioScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
-
-        layout.add_widget(Label(text='Inventario y Control de Stock', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
-
-        self.scroll = ScrollView(size_hint=(1, 1))
-        self.lista_layout = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
-        self.lista_layout.bind(minimum_height=self.lista_layout.setter('height'))
-        self.scroll.add_widget(self.lista_layout)
-        layout.add_widget(self.scroll)
-
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(45))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        self.add_widget(layout)
-
-    def on_enter(self):
-        self.lista_layout.clear_widgets()
-        for prod in GlobalData.inventario:
-            alerta = " [¡STOCK BAJO!]" if prod['stock'] <= 5 else ""
-            color_texto = (1, 0.4, 0.4, 1) if prod['stock'] <= 5 else (1, 1, 1, 1)
-            texto = f"{prod['nombre']} | Stock: {prod['stock']}{alerta}\nCompra: {prod['costo']} Bs | Venta: {prod['precio']} Bs"
-            lbl = Label(text=texto, font_size=dp(13), color=color_texto, size_hint_y=None, height=dp(50), halign='left', valign='middle')
-            lbl.bind(size=lbl.setter('text_size'))
-            self.lista_layout.add_widget(lbl)
-
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-
-class IngresoProductoScreen(Screen):
-    def __init__(self, **kwargs):
-        super(IngresoProductoScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(8))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
-
-        layout.add_widget(Label(text='Ingreso de Producto / Compras', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
-
-        layout.add_widget(Label(text='Nombre del Producto:', font_size=dp(12), size_hint_y=None, height=dp(18)))
-        self.input_nombre = TextInput(hint_text='Ej. Arroz 1kg', multiline=False, size_hint_y=None, height=dp(38))
-        layout.add_widget(self.input_nombre)
-
-        layout.add_widget(Label(text='Cantidad a ingresar (Stock):', font_size=dp(12), size_hint_y=None, height=dp(18)))
-        self.input_stock = TextInput(hint_text='0', multiline=False, input_filter='int', size_hint_y=None, height=dp(38))
-        layout.add_widget(self.input_stock)
-
-        layout.add_widget(Label(text='Costo de Compra (Bs):', font_size=dp(12), size_hint_y=None, height=dp(18)))
-        self.input_costo = TextInput(hint_text='0.00', multiline=False, input_filter='float', size_hint_y=None, height=dp(38))
-        layout.add_widget(self.input_costo)
-
-        layout.add_widget(Label(text='Precio de Venta (Bs):', font_size=dp(12), size_hint_y=None, height=dp(18)))
-        self.input_precio = TextInput(hint_text='0.00', multiline=False, input_filter='float', size_hint_y=None, height=dp(38))
-        layout.add_widget(self.input_precio)
-
-        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(25))
-        layout.add_widget(self.lbl_msg)
-
-        btn_guardar = Button(text='Guardar Producto', background_normal='', background_color=(0.7, 0.4, 0.1, 1), size_hint_y=None, height=dp(42), bold=True)
-        btn_guardar.bind(on_press=self.guardar_producto)
-        layout.add_widget(btn_guardar)
-
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(42))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        self.add_widget(layout)
-
-    def guardar_producto(self, instance):
-        try:
-            nombre = self.input_nombre.text.strip()
-            stock = int(self.input_stock.text)
-            costo = float(self.input_costo.text)
-            precio = float(self.input_precio.text)
-            
-            if not nombre:
-                self.lbl_msg.text = 'El nombre no puede estar vacío.'
-                return
-
-            encontrado = False
-            for p in GlobalData.inventario:
-                if p['nombre'].lower() == nombre.lower():
-                    p['stock'] += stock
-                    p['costo'] = costo
-                    p['precio'] = precio
-                    encontrado = True
-                    break
-            if not encontrado:
-                GlobalData.inventario.append({"nombre": nombre, "stock": stock, "costo": costo, "precio": precio})
-
-            guardar_datos()
-            self.lbl_msg.text = '¡Producto registrado con éxito!'
-            self.input_nombre.text = ''
-            self.input_stock.text = ''
-            self.input_costo.text = ''
-            self.input_precio.text = ''
-        except ValueError:
-            self.lbl_msg.text = 'Revise los campos numéricos.'
-
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-
-class VentaScreen(Screen):
+class VentaScreen(BaseScreen):
     def __init__(self, **kwargs):
         super(VentaScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(12), spacing=dp(6))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
+        self.content_layout.add_widget(Label(text='Punto de Venta Rápido', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
-        layout.add_widget(Label(text='Punto de Venta (Búsqueda Rápida)', font_size=dp(16), bold=True, size_hint_y=None, height=dp(30)))
-
-        self.input_buscar = TextInput(hint_text='Escriba una letra para buscar producto...', multiline=False, size_hint_y=None, height=dp(38), font_size=dp(14))
+        self.input_buscar = TextInput(hint_text='Buscar producto...', multiline=False, size_hint_y=None, height=dp(40), font_size=dp(13))
         self.input_buscar.bind(text=self.filtrar_productos)
-        layout.add_widget(self.input_buscar)
+        self.content_layout.add_widget(self.input_buscar)
 
-        self.scroll_res = ScrollView(size_hint=(1, 0.32))
-        self.lista_resultados = GridLayout(cols=1, spacing=dp(3), size_hint_y=None)
+        self.scroll_res = ScrollView(size_hint=(1, 0.25))
+        self.lista_resultados = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
         self.lista_resultados.bind(minimum_height=self.lista_resultados.setter('height'))
         self.scroll_res.add_widget(self.lista_resultados)
-        layout.add_widget(self.scroll_res)
+        self.content_layout.add_widget(self.scroll_res)
 
-        layout.add_widget(Label(text='Carrito de Compras:', font_size=dp(12), bold=True, size_hint_y=None, height=dp(20)))
+        self.content_layout.add_widget(Label(text='Carrito de Compras:', font_size=dp(13), bold=True, size_hint_y=None, height=dp(20), color=(1,1,1,1)))
         
         self.scroll_car = ScrollView(size_hint=(1, 0.28))
-        self.lista_carrito = GridLayout(cols=1, spacing=dp(3), size_hint_y=None)
+        self.lista_carrito = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
         self.lista_carrito.bind(minimum_height=self.lista_carrito.setter('height'))
         self.scroll_car.add_widget(self.lista_carrito)
-        layout.add_widget(self.scroll_car)
+        self.content_layout.add_widget(self.scroll_car)
 
-        self.lbl_total = Label(text='Total Venta: 0.00 Bs', font_size=dp(14), bold=True, color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(25))
-        layout.add_widget(self.lbl_total)
+        self.lbl_total = Label(text='Total: 0.00 Bs', font_size=dp(15), bold=True, color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(25))
+        self.content_layout.add_widget(self.lbl_total)
 
-        botones_pago = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
-        btn_efectivo = Button(text='Cobrar Efectivo', background_normal='', background_color=(0.15, 0.5, 0.25, 1), bold=True)
+        botones_pago = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(8))
+        btn_efectivo = Button(text='Cobrar Efectivo', background_normal='', background_color=(0.18, 0.7, 0.35, 1), bold=True)
         btn_efectivo.bind(on_press=lambda x: self.cobrar('efectivo'))
         
-        btn_qr = Button(text='Cobrar QR / Transf.', background_normal='', background_color=(0.2, 0.4, 0.7, 1), bold=True)
+        btn_qr = Button(text='Cobrar QR', background_normal='', background_color=(0.2, 0.4, 0.7, 1), bold=True)
         btn_qr.bind(on_press=lambda x: self.cobrar('qr'))
         
         botones_pago.add_widget(btn_efectivo)
         botones_pago.add_widget(btn_qr)
-        layout.add_widget(botones_pago)
-
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(38))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        self.add_widget(layout)
+        self.content_layout.add_widget(botones_pago)
 
     def on_enter(self):
         GlobalData.carrito = []
@@ -383,8 +269,7 @@ class VentaScreen(Screen):
         for prod in GlobalData.inventario:
             if filtro in prod['nombre'].lower():
                 alerta = " [STOCK BAJO]" if prod['stock'] <= 5 else ""
-                texto_btn = f"{prod['nombre']} | Stock: {prod['stock']}{alerta} | {prod['precio']} Bs"
-                btn = Button(text=texto_btn, size_hint_y=None, height=dp(35), background_normal='', background_color=(0.2, 0.3, 0.4, 1))
+                btn = Button(text=f"{prod['nombre']} | Stock: {prod['stock']}{alerta} | {prod['precio']} Bs", size_hint_y=None, height=dp(35), background_normal='', background_color=(0.2, 0.25, 0.35, 1))
                 btn.bind(on_press=lambda x, p=prod: self.agregar_al_carrito(p))
                 self.lista_resultados.add_widget(btn)
 
@@ -394,12 +279,7 @@ class VentaScreen(Screen):
             if en_carrito:
                 en_carrito['cantidad'] += 1
             else:
-                GlobalData.carrito.append({
-                    'nombre': producto['nombre'], 
-                    'precio': producto['precio'], 
-                    'costo': producto['costo'], 
-                    'cantidad': 1
-                })
+                GlobalData.carrito.append({'nombre': producto['nombre'], 'precio': producto['precio'], 'costo': producto['costo'], 'cantidad': 1})
             producto['stock'] -= 1
             guardar_datos()
             self.actualizar_carrito_vista()
@@ -413,210 +293,202 @@ class VentaScreen(Screen):
             total += sub
             lbl = Label(text=f"{item['nombre']} x{item['cantidad']} = {sub:.2f} Bs", font_size=dp(12), size_hint_y=None, height=dp(24), color=(1,1,1,1))
             self.lista_carrito.add_widget(lbl)
-        self.lbl_total.text = f'Total Venta: {total:.2f} Bs'
+        self.lbl_total.text = f'Total: {total:.2f} Bs'
 
     def cobrar(self, metodo):
-        if not GlobalData.carrito:
+        if not GlobalData.carrito or not GlobalData.caja_abierta:
             return
-        
-        if not GlobalData.caja_abierta:
-            self.lbl_total.text = '¡Error: La caja está cerrada!'
-            return
-
-        total_venta = 0.0
-        ganancia_venta = 0.0
-        detalle_productos = []
-
-        for item in GlobalData.carrito:
-            sub_venta = item['precio'] * item['cantidad']
-            sub_costo = item['costo'] * item['cantidad']
-            total_venta += sub_venta
-            ganancia_venta += (sub_venta - sub_costo)
-            detalle_productos.append(f"{item['nombre']} x{item['cantidad']}")
+        total_venta = sum(i['precio'] * i['cantidad'] for i in GlobalData.carrito)
+        ganancia_venta = sum((i['precio'] - i['costo']) * i['cantidad'] for i in GlobalData.carrito)
+        detalle = ", ".join([f"{i['nombre']} x{i['cantidad']}" for i in GlobalData.carrito])
 
         if metodo == 'efectivo':
             GlobalData.total_ventas_efectivo += total_venta
         else:
             GlobalData.total_ventas_qr += total_venta
-
         GlobalData.total_ganancias += ganancia_venta
 
-        # Registrar en historial
-        hora_actual = datetime.now().strftime("%H:%M:%S")
         GlobalData.historial_ventas.append({
-            "hora": hora_actual,
+            "hora": datetime.now().strftime("%H:%M:%S"),
             "metodo": metodo.upper(),
             "total": total_venta,
-            "productos": ", ".join(detalle_productos)
+            "productos": detalle
         })
-
         GlobalData.carrito = []
         guardar_datos()
         self.actualizar_carrito_vista()
-        self.lbl_total.text = f'¡Cobrado ({metodo.upper()})! Total: {total_venta:.2f} Bs'
+        self.lbl_total.text = f'¡Cobrado con éxito!'
 
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-
-class GastoScreen(Screen):
+class InventarioScreen(BaseScreen):
     def __init__(self, **kwargs):
-        super(GastoScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
-
-        layout.add_widget(Label(text='Registro de Gasto / Retiro de Caja', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
-
-        layout.add_widget(Label(text='Motivo del Gasto:', font_size=dp(13), size_hint_y=None, height=dp(20)))
-        self.input_motivo = TextInput(hint_text='Ej. Compra de cambio / Pago delivery', multiline=False, size_hint_y=None, height=dp(40))
-        layout.add_widget(self.input_motivo)
-
-        layout.add_widget(Label(text='Monto retirado (Bs):', font_size=dp(13), size_hint_y=None, height=dp(20)))
-        self.input_monto = TextInput(hint_text='0.00', multiline=False, input_filter='float', size_hint_y=None, height=dp(40))
-        layout.add_widget(self.input_monto)
-
-        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(30))
-        layout.add_widget(self.lbl_msg)
-
-        btn_registrar = Button(text='Registrar Retiro', background_normal='', background_color=(0.8, 0.3, 0.2, 1), size_hint_y=None, height=dp(45), bold=True)
-        btn_registrar.bind(on_press=self.registrar_gasto)
-        layout.add_widget(btn_registrar)
-
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(42))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        layout.add_widget(Label())
-        self.add_widget(layout)
-
-    def registrar_gasto(self, instance):
-        try:
-            motivo = self.input_motivo.text.strip()
-            monto = float(self.input_monto.text) if self.input_monto.text else 0.0
-            
-            if not motivo or monto <= 0:
-                self.lbl_msg.text = 'Ingrese un motivo y un monto válido.'
-                return
-
-            GlobalData.gastos_caja.append({"motivo": motivo, "monto": monto})
-            guardar_datos()
-            self.lbl_msg.text = f'Gasto de {monto:.2f} Bs registrado con éxito.'
-            self.input_motivo.text = ''
-            self.input_monto.text = ''
-        except ValueError:
-            self.lbl_msg.text = 'Revise los campos numéricos.'
-
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-
-class HistorialScreen(Screen):
-    def __init__(self, **kwargs):
-        super(HistorialScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
-
-        layout.add_widget(Label(text='Historial de Ventas del Día', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
+        super(InventarioScreen, self).__init__(**kwargs)
+        self.content_layout.add_widget(Label(text='Inventario y Stock', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
         self.scroll = ScrollView(size_hint=(1, 1))
         self.lista_layout = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         self.lista_layout.bind(minimum_height=self.lista_layout.setter('height'))
         self.scroll.add_widget(self.lista_layout)
-        layout.add_widget(self.scroll)
+        self.content_layout.add_widget(self.scroll)
 
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(45))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        self.add_widget(layout)
+        btn_agregar = Button(text='+ Nuevo Producto / Stock', background_normal='', background_color=(0.7, 0.4, 0.1, 1), size_hint_y=None, height=dp(42), bold=True)
+        btn_agregar.bind(on_press=lambda x: setattr(self.manager, 'current', 'ingreso'))
+        self.content_layout.add_widget(btn_agregar)
 
     def on_enter(self):
         self.lista_layout.clear_widgets()
-        if not GlobalData.historial_ventas:
-            lbl = Label(text='No hay ventas registradas aún.', font_size=dp(13), color=(0.7,0.7,0.7,1), size_hint_y=None, height=dp(40))
-            self.lista_layout.add_widget(lbl)
-            return
-
-        for venta in reversed(GlobalData.historial_ventas):
-            texto = f"[{venta['hora']}] ({venta['metodo']}) - Total: {venta['total']:.2f} Bs\nProd: {venta['productos']}"
-            lbl = Label(text=texto, font_size=dp(12), color=(1,1,1,1), size_hint_y=None, height=dp(50), halign='left', valign='middle')
+        for prod in GlobalData.inventario:
+            alerta = " [¡STOCK BAJO!]" if prod['stock'] <= 5 else ""
+            color_texto = (1, 0.4, 0.4, 1) if prod['stock'] <= 5 else (1, 1, 1, 1)
+            texto = f"{prod['nombre']} | Stock: {prod['stock']}{alerta}\nCompra: {prod['costo']} Bs | Venta: {prod['precio']} Bs"
+            lbl = Label(text=texto, font_size=dp(12), color=color_texto, size_hint_y=None, height=dp(45), halign='left', valign='middle')
             lbl.bind(size=lbl.setter('text_size'))
             self.lista_layout.add_widget(lbl)
 
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
+class IngresoProductoScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super(IngresoProductoScreen, self).__init__(**kwargs)
+        self.content_layout.add_widget(Label(text='Registrar / Actualizar Producto', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
+        self.input_nombre = TextInput(hint_text='Nombre del producto', multiline=False, size_hint_y=None, height=dp(40))
+        self.input_stock = TextInput(hint_text='Cantidad (Stock)', multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
+        self.input_costo = TextInput(hint_text='Costo de compra (Bs)', multiline=False, input_filter='float', size_hint_y=None, height=dp(40))
+        self.input_precio = TextInput(hint_text='Precio de venta (Bs)', multiline=False, input_filter='float', size_hint_y=None, height=dp(40))
 
-class ResumenScreen(Screen):
+        self.content_layout.add_widget(self.input_nombre)
+        self.content_layout.add_widget(self.input_stock)
+        self.content_layout.add_widget(self.input_costo)
+        self.content_layout.add_widget(self.input_precio)
+
+        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(25))
+        self.content_layout.add_widget(self.lbl_msg)
+
+        btn_guardar = Button(text='Guardar', background_normal='', background_color=(0.18, 0.7, 0.35, 1), size_hint_y=None, height=dp(45), bold=True)
+        btn_guardar.bind(on_press=self.guardar_producto)
+        self.content_layout.add_widget(btn_guardar)
+
+        btn_volver = Button(text='Volver al Inventario', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(40))
+        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'inventario'))
+        self.content_layout.add_widget(btn_volver)
+
+    def guardar_producto(self, instance):
+        try:
+            nombre = self.input_nombre.text.strip()
+            stock = int(self.input_stock.text)
+            costo = float(self.input_costo.text)
+            precio = float(self.input_precio.text)
+            if not nombre: return
+            
+            encontrado = False
+            for p in GlobalData.inventario:
+                if p['nombre'].lower() == nombre.lower():
+                    p['stock'] += stock
+                    p['costo'] = costo
+                    p['precio'] = precio
+                    encontrado = True
+                    break
+            if not encontrado:
+                GlobalData.inventario.append({"nombre": nombre, "stock": stock, "costo": costo, "precio": precio})
+            
+            guardar_datos()
+            self.lbl_msg.text = '¡Guardado con éxito!'
+            self.input_nombre.text = ''
+            self.input_stock.text = ''
+            self.input_costo.text = ''
+            self.input_precio.text = ''
+        except ValueError:
+            self.lbl_msg.text = 'Verifique los campos numéricos.'
+
+class ResumenScreen(BaseScreen):
     def __init__(self, **kwargs):
         super(ResumenScreen, self).__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12))
-        
-        with layout.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self.rect = RoundedRectangle(size=layout.size, pos=layout.pos, radius=[0])
-        layout.bind(size=self._update_rect, pos=self._update_rect)
+        self.content_layout.add_widget(Label(text='Resumen y Caja Chica', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
-        layout.add_widget(Label(text='Resumen Financiero y Ganancias', font_size=dp(18), bold=True, size_hint_y=None, height=dp(35)))
-        
-        self.lbl_detalles = Label(text='', font_size=dp(13), color=(1,1,1,1), halign='left', valign='middle')
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.lbl_detalles = Label(text='', font_size=dp(13), color=(1,1,1,1), halign='left', valgin='top', size_hint_y=None)
         self.lbl_detalles.bind(size=self.lbl_detalles.setter('text_size'))
-        layout.add_widget(self.lbl_detalles)
+        self.scroll.add_widget(self.lbl_detalles)
+        self.content_layout.add_widget(self.scroll)
 
-        btn_volver = Button(text='Volver al Menú', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(45))
-        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'menu'))
-        layout.add_widget(btn_volver)
-
-        self.add_widget(layout)
+        btn_gasto = Button(text='Registrar Gasto / Retiro', background_normal='', background_color=(0.8, 0.3, 0.2, 1), size_hint_y=None, height=dp(42), bold=True)
+        btn_gasto.bind(on_press=lambda x: setattr(self.manager, 'current', 'gasto'))
+        self.content_layout.add_widget(btn_gasto)
 
     def on_enter(self):
         estado_txt = "Abierta" if GlobalData.caja_abierta else "Cerrada"
         total_gastos = sum(g['monto'] for g in GlobalData.gastos_caja)
         efectivo_en_caja = GlobalData.monto_inicial + GlobalData.total_ventas_efectivo - total_gastos
-        total_ventas_generales = GlobalData.total_ventas_efectivo + GlobalData.total_ventas_qr
-        
+        total_ventas = GlobalData.total_ventas_efectivo + GlobalData.total_ventas_qr
+
         self.lbl_detalles.text = (
-            f"Estado de Caja: {estado_txt}\n\n"
-            f"--- CONTROL DE CAJA FÍSICA ---\n"
-            f"Monto Inicial: {GlobalData.monto_inicial:.2f} Bs\n"
-            f"Ventas en Efectivo: {GlobalData.total_ventas_efectivo:.2f} Bs\n"
-            f"Retiros / Gastos menores: -{total_gastos:.2f} Bs\n"
-            f"Dinero Físico en Caja: {efectivo_en_caja:.2f} Bs\n\n"
-            f"--- VENTAS DIGITALES ---\n"
-            f"Ventas por QR / Transf.: {GlobalData.total_ventas_qr:.2f} Bs\n"
-            f"Total Ventas Generales: {total_ventas_generales:.2f} Bs\n\n"
-            f"--- GANANCIAS NETAS ---\n"
-            f"Ganancia Total del Día: {GlobalData.total_ganancias:.2f} Bs"
+            f"Estado: {estado_txt}\n\n"
+            f"[EFECTIVO FÍSICO]\n"
+            f"• Inicial: {GlobalData.monto_inicial:.2f} Bs\n"
+            f"• Ventas Efectivo: {GlobalData.total_ventas_efectivo:.2f} Bs\n"
+            f"• Retiros / Gastos: -{total_gastos:.2f} Bs\n"
+            f"• Total en Caja: {efectivo_en_caja:.2f} Bs\n\n"
+            f"[VENTAS DIGITALES]\n"
+            f"• QR / Transferencia: {GlobalData.total_ventas_qr:.2f} Bs\n"
+            f"• Total General: {total_ventas:.2f} Bs\n\n"
+            f"[GANANCIAS NETAS]\n"
+            f"• Ganancia del día: {GlobalData.total_ganancias:.2f} Bs"
         )
+        self.lbl_detalles.height = max(dp(300), self.lbl_detalles.texture_size[1])
 
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
+class GastoScreen(BaseScreen):
+    def __init__(self, **kwargs):
+        super(GastoScreen, self).__init__(**kwargs)
+        self.content_layout.add_widget(Label(text='Registrar Gasto / Retiro', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
+        self.input_motivo = TextInput(hint_text='Motivo (ej. Cambio, Delivery)', multiline=False, size_hint_y=None, height=dp(45))
+        self.input_monto = TextInput(hint_text='Monto (Bs)', multiline=False, input_filter='float', size_hint_y=None, height=dp(45))
+        
+        self.content_layout.add_widget(self.input_motivo)
+        self.content_layout.add_widget(self.input_monto)
 
-class MyApp(App):
+        self.lbl_msg = Label(text='', font_size=dp(13), color=(0.2, 0.8, 0.3, 1), size_hint_y=None, height=dp(30))
+        self.content_layout.add_widget(self.lbl_msg)
+
+        btn_reg = Button(text='Registrar Retiro', background_normal='', background_color=(0.8, 0.3, 0.2, 1), size_hint_y=None, height=dp(45), bold=True)
+        btn_reg.bind(on_press=self.registrar)
+        self.content_layout.add_widget(btn_reg)
+
+        btn_volver = Button(text='Volver al Resumen', background_normal='', background_color=(0.4, 0.4, 0.4, 1), size_hint_y=None, height=dp(40))
+        btn_volver.bind(on_press=lambda x: setattr(self.manager, 'current', 'resumen'))
+        self.content_layout.add_widget(btn_volver)
+        
+        self.content_layout.add_widget(Label())
+
+    def registrar(self, instance):
+        try:
+            motivo = self.input_motivo.text.strip()
+            monto = float(self.input_monto.text) if self.input_monto.text else 0.0
+            if not motivo or monto <= 0: return
+            
+            GlobalData.gastos_caja.append({"motivo": motivo, "monto": monto})
+            guardar_datos()
+            self.lbl_msg.text = '¡Gasto registrado con éxito!'
+            self.input_motivo.text = ''
+            self.input_monto.text = ''
+        except ValueError:
+            self.lbl_msg.text = 'Verifique los datos.'
+
+class MainApp(App):
     def build(self):
+        root = BoxLayout(orientation='vertical')
         sm = ScreenManager()
-        sm.add_widget(DashboardScreen(name='menu'))
+        
         sm.add_widget(CajaScreen(name='caja'))
+        sm.add_widget(VentaScreen(name='venta'))
         sm.add_widget(InventarioScreen(name='inventario'))
         sm.add_widget(IngresoProductoScreen(name='ingreso'))
-        sm.add_widget(VentaScreen(name='venta'))
-        sm.add_widget(GastoScreen(name='gasto'))
-        sm.add_widget(HistorialScreen(name='historial'))
         sm.add_widget(ResumenScreen(name='resumen'))
-        return sm
+        sm.add_widget(GastoScreen(name='gasto'))
+
+        nav_bar = BottomNavBar(sm)
+        
+        root.add_widget(sm)
+        root.add_widget(nav_bar)
+        return root
 
 if __name__ == '__main__':
-    MyApp().run()
+    MainApp().run()
