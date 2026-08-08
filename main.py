@@ -9,7 +9,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.graphics import Color, RoundedRectangle, Line
+from kivy.graphics import Color, RoundedRectangle
 from kivy.metrics import dp
 
 DATA_FILE = "sistema_negocio_data.json"
@@ -132,7 +132,6 @@ class CajaScreen(BaseScreen):
         
         self.content_layout.add_widget(Label(text='Control de Caja', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
-        # Input Card Estilo Imagen
         self.input_monto = TextInput(
             hint_text='Monto Inicial para Apertura (Bs)', 
             multiline=False, 
@@ -159,13 +158,14 @@ class CajaScreen(BaseScreen):
         self.btn_accion.bind(on_press=self.ejecutar_accion)
         self.content_layout.add_widget(self.btn_accion)
 
-        # Tarjeta de Estado (Idéntica a la imagen de referencia)
         self.card_estado = RoundedCard(orientation='vertical', padding=dp(15), spacing=dp(8), size_hint_y=None, height=dp(130), bg_color=(0.12, 0.13, 0.16, 1))
-        self.lbl_estado = Label(text='Estado: Caja Cerrada', font_size=dp(15), bold=True, color=(1,1,1,1), halign='left', valgin='middle')
+        
+        # Corrección de propiedad valign
+        self.lbl_estado = Label(text='Estado: Caja Cerrada', font_size=dp(15), bold=True, color=(1,1,1,1), halign='left', valign='middle')
         self.lbl_estado.bind(size=self.lbl_estado.setter('text_size'))
         self.card_estado.add_widget(self.lbl_estado)
 
-        self.lbl_fondo = Label(text='Fondo Actual: 0.00 Bs', font_size=dp(14), color=(0.8, 0.8, 0.8, 1), halign='left', valgin='middle')
+        self.lbl_fondo = Label(text='Fondo Actual: 0.00 Bs', font_size=dp(14), color=(0.8, 0.8, 0.8, 1), halign='left', valign='middle')
         self.lbl_fondo.bind(size=self.lbl_fondo.setter('text_size'))
         self.card_estado.add_widget(self.lbl_fondo)
         
@@ -404,7 +404,9 @@ class ResumenScreen(BaseScreen):
         self.content_layout.add_widget(Label(text='Resumen y Caja Chica', font_size=dp(18), bold=True, size_hint_y=None, height=dp(30), color=(1,1,1,1)))
 
         self.scroll = ScrollView(size_hint=(1, 1))
-        self.lbl_detalles = Label(text='', font_size=dp(13), color=(1,1,1,1), halign='left', valgin='top', size_hint_y=None)
+        
+        # Corrección de propiedad valign
+        self.lbl_detalles = Label(text='', font_size=dp(13), color=(1,1,1,1), halign='left', valign='top', size_hint_y=None)
         self.lbl_detalles.bind(size=self.lbl_detalles.setter('text_size'))
         self.scroll.add_widget(self.lbl_detalles)
         self.content_layout.add_widget(self.scroll)
