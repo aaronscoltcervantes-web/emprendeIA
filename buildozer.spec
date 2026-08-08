@@ -34,6 +34,9 @@ fullscreen = 0
 # (bool) Accept licenses automatically
 android.accept_sdk_license = True
 
+# (str) Android NDK version
+android.ndk = 25b
+
 # (int) Target Android API and Build-Tools version
 android.api = 33
 android.minapi = 21
