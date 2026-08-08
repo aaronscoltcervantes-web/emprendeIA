@@ -10,15 +10,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: kivy/buildozer:latest
+      options: --user root
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Build with Buildozer
-      uses: kivy/buildozer-action@v1
-      with:
-        command: buildozer -v android debug
+    - name: Fix git safe directory
+      run: |
+        git config --global --add safe.directory /__w/$(echo ${{ github.repository }}/${{ github.repository }}) || true
+
+    - name: Build APK with Buildozer
+      run: |
+        buildozer -v android debug
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
