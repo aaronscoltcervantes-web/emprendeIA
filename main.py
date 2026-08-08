@@ -21,9 +21,16 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.popup import Popup
 from kivy.graphics import Color, RoundedRectangle, Rectangle, Ellipse, Line
 from kivy.metrics import dp, sp
 from kivy.animation import Animation
+
+try:
+    import qrcode
+    QRCODE_DISPONIBLE = True
+except ImportError:
+    QRCODE_DISPONIBLE = False
 
 DATA_FILE = "sistema_negocio_data.json"
 
@@ -47,7 +54,8 @@ def cargar_datos():
             {"nombre": "Agua Mineral 500ml", "stock": 2, "costo": 3.0, "precio": 5.0}
         ],
         "historial_ventas": [],
-        "gastos_caja": []
+        "gastos_caja": [],
+        "contador_ventas": 0
     }
 
 
@@ -60,7 +68,8 @@ def guardar_datos():
         "total_ganancias": GlobalData.total_ganancias,
         "inventario": GlobalData.inventario,
         "historial_ventas": GlobalData.historial_ventas,
-        "gastos_caja": GlobalData.gastos_caja
+        "gastos_caja": GlobalData.gastos_caja,
+        "contador_ventas": GlobalData.contador_ventas
     }
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -80,6 +89,7 @@ class GlobalData:
     inventario = datos["inventario"]
     historial_ventas = datos["historial_ventas"]
     gastos_caja = datos["gastos_caja"]
+    contador_ventas = datos.get("contador_ventas", 0)
     carrito = []
 
 
@@ -216,6 +226,36 @@ class Icon(Widget):
              width=dp(2.2), cap='round')
         Ellipse(pos=(x + w * 0.5 - dp(1.4), y + h * 0.18), size=(dp(2.8), dp(2.8)))
 
+    def _draw_editar(self, x, y, w, h):
+        Line(points=[x + w * 0.22, y + h * 0.22, x + w * 0.72, y + h * 0.72],
+             width=dp(3.0), cap='round')
+        Line(points=[x + w * 0.68, y + h * 0.68, x + w * 0.8, y + h * 0.8],
+             width=dp(3.0), cap='round')
+        Line(points=[x + w * 0.16, y + h * 0.16, x + w * 0.26, y + h * 0.26],
+             width=dp(3.0), cap='round')
+
+    def _draw_eliminar(self, x, y, w, h):
+        Line(rounded_rectangle=(x + w * 0.24, y + h * 0.14, w * 0.52, h * 0.56, dp(2)),
+             width=dp(1.7))
+        Line(points=[x + w * 0.16, y + h * 0.7, x + w * 0.84, y + h * 0.7], width=dp(1.7))
+        Line(points=[x + w * 0.4, y + h * 0.76, x + w * 0.6, y + h * 0.76], width=dp(2.0))
+        Line(points=[x + w * 0.38, y + h * 0.26, x + w * 0.38, y + h * 0.56], width=dp(1.4))
+        Line(points=[x + w * 0.5, y + h * 0.26, x + w * 0.5, y + h * 0.56], width=dp(1.4))
+        Line(points=[x + w * 0.62, y + h * 0.26, x + w * 0.62, y + h * 0.56], width=dp(1.4))
+
+    def _draw_ticket(self, x, y, w, h):
+        Line(rounded_rectangle=(x + w * 0.22, y + h * 0.12, w * 0.56, h * 0.76, dp(3)),
+             width=dp(1.7))
+        for i in range(3):
+            yy = y + h * 0.3 + i * h * 0.16
+            Line(points=[x + w * 0.34, yy, x + w * 0.66, yy], width=dp(1.4))
+
+    def _draw_cerrar(self, x, y, w, h):
+        Line(points=[x + w * 0.26, y + h * 0.26, x + w * 0.74, y + h * 0.74],
+             width=dp(2.2), cap='round')
+        Line(points=[x + w * 0.74, y + h * 0.26, x + w * 0.26, y + h * 0.74],
+             width=dp(2.2), cap='round')
+
 
 # ---------------------------------------------------------------------------
 # WIDGETS BASE reutilizables
@@ -265,10 +305,11 @@ class RoundedButton(ButtonBehavior, FloatLayout):
         self.add_widget(self.label)
 
         if icon:
+            icon_pos_hint = {'center_x': 0.5, 'center_y': 0.5} if not text else {'x': 0.045, 'center_y': 0.5}
             self.icon_widget = Icon(
                 kind=icon, color=text_color or Theme.TEXT,
                 size_hint=(None, None), size=(icon_size or dp(20), icon_size or dp(20)),
-                pos_hint={'x': 0.045, 'center_y': 0.5})
+                pos_hint=icon_pos_hint)
             self.add_widget(self.icon_widget)
 
     def _update_rect(self, *args):
@@ -338,6 +379,301 @@ class MessageBanner(BoxLayout):
         self.label.text = ''
         self.height = 0
         self.opacity = 0
+
+
+# ---------------------------------------------------------------------------
+# CÓDIGO QR REAL (usa la librería 'qrcode' si está disponible; si no,
+# muestra un aviso en vez de dibujar un cuadrado falso)
+# ---------------------------------------------------------------------------
+class QRWidget(Widget):
+    def __init__(self, data='', **kwargs):
+        super().__init__(**kwargs)
+        self._matrix = None
+        if QRCODE_DISPONIBLE:
+            try:
+                qr = qrcode.QRCode(border=1, error_correction=qrcode.constants.ERROR_CORRECT_M)
+                qr.add_data(data)
+                qr.make(fit=True)
+                self._matrix = qr.get_matrix()
+            except Exception as e:
+                print(f"[AVISO] No se pudo generar el QR: {e}")
+                self._matrix = None
+        self.bind(pos=self._redraw, size=self._redraw)
+        self._redraw()
+
+    def _redraw(self, *args):
+        self.canvas.clear()
+        x, y = self.pos
+        w, h = self.size
+        if w <= 0 or h <= 0:
+            return
+        with self.canvas:
+            Color(1, 1, 1, 1)
+            Rectangle(pos=(x, y), size=(w, h))
+            if self._matrix:
+                n = len(self._matrix)
+                cell = min(w, h) / n
+                off_x = x + (w - cell * n) / 2
+                off_y = y + (h - cell * n) / 2
+                Color(0, 0, 0, 1)
+                for row_i, row in enumerate(self._matrix):
+                    for col_i, val in enumerate(row):
+                        if val:
+                            Rectangle(pos=(off_x + col_i * cell, off_y + (n - row_i - 1) * cell),
+                                      size=(cell, cell))
+
+
+# ---------------------------------------------------------------------------
+# VENTANAS MODALES (Popup de Kivy, estilizadas con el tema oscuro de la app)
+# ---------------------------------------------------------------------------
+def _popup_kwargs(title, extra_height=0, size_hint=(0.87, None)):
+    return dict(
+        title=title, size_hint=size_hint,
+        title_color=Theme.TEXT, title_size=sp(16),
+        background_color=(0.08, 0.09, 0.11, 0.98),
+        separator_color=Theme.SURFACE_BORDER,
+    )
+
+
+class ConfirmModal(Popup):
+    """Modal genérico de confirmación (Cancelar / Acción) con mensaje libre."""
+
+    def __init__(self, titulo, mensaje, on_confirmar, texto_confirmar='Confirmar',
+                 texto_cancelar='Cancelar', color_confirmar=None, color_confirmar_dark=None,
+                 icono_confirmar=None, **kwargs):
+        color_confirmar = color_confirmar or Theme.PRIMARY
+        color_confirmar_dark = color_confirmar_dark or Theme.PRIMARY_DARK
+
+        content = BoxLayout(orientation='vertical', spacing=dp(18), padding=dp(20))
+        lbl = Label(text=mensaje, font_size=sp(14.5), color=Theme.TEXT,
+                    halign='center', valign='middle')
+        lbl.bind(size=lbl.setter('text_size'))
+        content.add_widget(lbl)
+
+        botones = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(12))
+        btn_cancelar = RoundedButton(text=texto_cancelar, bg_color=Theme.NEUTRAL,
+                                      bg_color_dark=Theme.NEUTRAL_DARK, font_size=sp(14))
+        btn_confirmar = RoundedButton(text=texto_confirmar, icon=icono_confirmar,
+                                       bg_color=color_confirmar, bg_color_dark=color_confirmar_dark,
+                                       font_size=sp(13.5))
+        botones.add_widget(btn_cancelar)
+        botones.add_widget(btn_confirmar)
+        content.add_widget(botones)
+
+        super().__init__(content=content, auto_dismiss=False, height=dp(210),
+                          **_popup_kwargs(titulo), **kwargs)
+
+        btn_cancelar.bind(on_release=lambda x: self.dismiss())
+
+        def _confirmar(x):
+            self.dismiss()
+            on_confirmar()
+
+        btn_confirmar.bind(on_release=_confirmar)
+
+
+class CantidadModal(Popup):
+    """Selector de cantidad antes de agregar un producto al carrito."""
+
+    def __init__(self, producto, on_agregar, **kwargs):
+        self.producto = producto
+        self.cantidad = 1
+        self.max_stock = producto['stock']
+
+        content = BoxLayout(orientation='vertical', spacing=dp(14), padding=dp(20))
+
+        lbl_prod = Label(text=producto['nombre'], font_size=sp(16), bold=True,
+                          color=Theme.TEXT, size_hint_y=None, height=dp(26))
+        content.add_widget(lbl_prod)
+
+        self.lbl_stock = Label(text=f"Stock disponible: {self.max_stock}", font_size=sp(12.5),
+                                color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(18))
+        content.add_widget(self.lbl_stock)
+
+        stepper = BoxLayout(size_hint_y=None, height=dp(54), spacing=dp(16))
+        btn_menos = RoundedButton(text='-', font_size=sp(20), bg_color=Theme.NEUTRAL,
+                                   bg_color_dark=Theme.NEUTRAL_DARK,
+                                   size_hint=(None, None), size=(dp(54), dp(54)))
+        self.lbl_cant = Label(text='1', font_size=sp(22), bold=True, color=Theme.TEXT)
+        btn_mas = RoundedButton(text='+', font_size=sp(20), bg_color=Theme.NEUTRAL,
+                                 bg_color_dark=Theme.NEUTRAL_DARK,
+                                 size_hint=(None, None), size=(dp(54), dp(54)))
+        btn_menos.bind(on_release=lambda x: self._cambiar(-1))
+        btn_mas.bind(on_release=lambda x: self._cambiar(1))
+        stepper.add_widget(Widget())
+        stepper.add_widget(btn_menos)
+        stepper.add_widget(self.lbl_cant)
+        stepper.add_widget(btn_mas)
+        stepper.add_widget(Widget())
+        content.add_widget(stepper)
+
+        botones = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(12))
+        btn_cancelar = RoundedButton(text='Cancelar', bg_color=Theme.NEUTRAL,
+                                      bg_color_dark=Theme.NEUTRAL_DARK, font_size=sp(14))
+        btn_agregar = RoundedButton(text='Agregar al carrito', icon='plus', font_size=sp(12.5),
+                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
+        botones.add_widget(btn_cancelar)
+        botones.add_widget(btn_agregar)
+        content.add_widget(botones)
+
+        super().__init__(content=content, auto_dismiss=True, height=dp(320),
+                          **_popup_kwargs('¿Cuántas unidades desea vender?'), **kwargs)
+
+        btn_cancelar.bind(on_release=lambda x: self.dismiss())
+
+        def _confirmar(x):
+            if self.cantidad > 0:
+                cantidad = self.cantidad
+                self.dismiss()
+                on_agregar(cantidad)
+
+        btn_agregar.bind(on_release=_confirmar)
+
+    def _cambiar(self, delta):
+        nueva = self.cantidad + delta
+        nueva = max(1, min(nueva, self.max_stock))
+        self.cantidad = nueva
+        self.lbl_cant.text = str(self.cantidad)
+
+
+class ConfirmVentaModal(Popup):
+    """Confirmación final antes de registrar una venta (efectivo o QR)."""
+
+    def __init__(self, items, total, metodo, on_confirmar, **kwargs):
+        content = BoxLayout(orientation='vertical', spacing=dp(12), padding=dp(20))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        lista = BoxLayout(orientation='vertical', spacing=dp(3), size_hint_y=None)
+        lista.bind(minimum_height=lista.setter('height'))
+        for it in items:
+            lbl = Label(text=f"{it['nombre']}  x{it['cantidad']}", font_size=sp(13.5),
+                        color=Theme.TEXT, halign='left', valign='middle',
+                        size_hint_y=None, height=dp(22))
+            lbl.bind(size=lbl.setter('text_size'))
+            lista.add_widget(lbl)
+        scroll.add_widget(lista)
+        content.add_widget(scroll)
+
+        lbl_total = Label(text=f"Total: {total:.2f} Bs", font_size=sp(18), bold=True,
+                           color=Theme.PRIMARY, size_hint_y=None, height=dp(28))
+        content.add_widget(lbl_total)
+
+        lbl_metodo = Label(text=f"Método de pago: {metodo.upper()}", font_size=sp(13),
+                            color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(20))
+        content.add_widget(lbl_metodo)
+
+        lbl_pregunta = Label(text='¿Está seguro de realizar la venta?', font_size=sp(13.5),
+                              color=Theme.TEXT, size_hint_y=None, height=dp(24))
+        content.add_widget(lbl_pregunta)
+
+        botones = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(12))
+        btn_cancelar = RoundedButton(text='Cancelar', bg_color=Theme.NEUTRAL,
+                                      bg_color_dark=Theme.NEUTRAL_DARK, font_size=sp(14))
+        btn_confirmar = RoundedButton(text='Confirmar venta', icon='check', font_size=sp(12.5),
+                                       bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
+        botones.add_widget(btn_cancelar)
+        botones.add_widget(btn_confirmar)
+        content.add_widget(botones)
+
+        super().__init__(content=content, auto_dismiss=False, size_hint=(0.9, 0.7),
+                          **{k: v for k, v in _popup_kwargs('Confirmar Venta').items() if k != 'size_hint'},
+                          **kwargs)
+
+        btn_cancelar.bind(on_release=lambda x: self.dismiss())
+
+        def _confirmar(x):
+            self.dismiss()
+            on_confirmar()
+
+        btn_confirmar.bind(on_release=_confirmar)
+
+
+class TicketModal(Popup):
+    """Comprobante de venta, con QR real si el pago fue por QR."""
+
+    def __init__(self, ticket_num, fecha, hora, productos, total, metodo, **kwargs):
+        content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(18))
+
+        scroll = ScrollView(size_hint=(1, 1))
+        info = BoxLayout(orientation='vertical', spacing=dp(4), size_hint_y=None, padding=(0, dp(4)))
+        info.bind(minimum_height=info.setter('height'))
+
+        def linea(texto, size=13, bold=False, color=None, align='left', italic=False):
+            lbl = Label(text=texto, font_size=sp(size), bold=bold, italic=italic,
+                        color=color or Theme.TEXT, halign=align, valign='middle',
+                        size_hint_y=None, height=dp(size + 10))
+            lbl.bind(size=lbl.setter('text_size'))
+            info.add_widget(lbl)
+
+        linea(f"VENTA #{ticket_num:04d}", size=16, bold=True, color=Theme.PRIMARY, align='center')
+        linea(f"Fecha: {fecha}    Hora: {hora}", size=11.5, color=Theme.TEXT_MUTED, align='center')
+        info.add_widget(Widget(size_hint_y=None, height=dp(6)))
+
+        for p in productos:
+            sub = p['precio'] * p['cantidad']
+            linea(p['nombre'], size=13, bold=True)
+            linea(f"  {p['cantidad']} x {p['precio']:.2f} Bs"
+                  f"{' ' * 6}{sub:.2f} Bs", size=12, color=Theme.TEXT_MUTED)
+
+        info.add_widget(Widget(size_hint_y=None, height=dp(6)))
+        linea(f"TOTAL: {total:.2f} Bs", size=17, bold=True, color=Theme.PRIMARY, align='center')
+        linea(f"Pago: {metodo.upper()}", size=13, color=Theme.TEXT_MUTED, align='center')
+
+        scroll.add_widget(info)
+        content.add_widget(scroll)
+
+        if metodo == 'qr':
+            qr_holder = AnchorLayout(size_hint_y=None, height=dp(180))
+            if QRCODE_DISPONIBLE:
+                qr_data = f"NEGOCIO|VENTA#{ticket_num}|TOTAL:{total:.2f}|FECHA:{fecha}|PAGO:QR"
+                qr_holder.add_widget(QRWidget(data=qr_data, size=(dp(160), dp(160)),
+                                               size_hint=(None, None)))
+            else:
+                aviso = Label(text='Código QR no disponible.\nAgrega "qrcode" a requirements\n'
+                                    'en buildozer.spec para activarlo.',
+                               font_size=sp(11.5), color=Theme.TEXT_MUTED,
+                               halign='center', valign='middle')
+                aviso.bind(size=aviso.setter('text_size'))
+                qr_holder.add_widget(aviso)
+            content.add_widget(qr_holder)
+
+        linea_gracias = Label(text='¡Gracias por su compra!', font_size=sp(13), italic=True,
+                               color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(24))
+        content.add_widget(linea_gracias)
+
+        botones = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(10))
+        btn_guardar = RoundedButton(text='Guardar', icon='ticket', font_size=sp(13),
+                                     bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK)
+        btn_cerrar = RoundedButton(text='Cerrar', icon='cerrar', font_size=sp(13),
+                                    bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK)
+        botones.add_widget(btn_guardar)
+        botones.add_widget(btn_cerrar)
+        content.add_widget(botones)
+
+        super().__init__(content=content, auto_dismiss=True, size_hint=(0.9, 0.85),
+                          **{k: v for k, v in _popup_kwargs('Comprobante de Venta').items() if k != 'size_hint'},
+                          **kwargs)
+
+        self._datos_txt = (ticket_num, fecha, hora, productos, total, metodo)
+        btn_cerrar.bind(on_release=lambda x: self.dismiss())
+        btn_guardar.bind(on_release=self._guardar_txt)
+
+    def _guardar_txt(self, instance):
+        ticket_num, fecha, hora, productos, total, metodo = self._datos_txt
+        try:
+            nombre_archivo = f"ticket_{ticket_num:04d}.txt"
+            lineas = [f"VENTA #{ticket_num:04d}", f"Fecha: {fecha}  Hora: {hora}", "-" * 32]
+            for p in productos:
+                sub = p['precio'] * p['cantidad']
+                lineas.append(f"{p['nombre']}  {p['cantidad']} x {p['precio']:.2f} Bs = {sub:.2f} Bs")
+            lineas += ["-" * 32, f"TOTAL: {total:.2f} Bs", f"Pago: {metodo.upper()}",
+                       "¡Gracias por su compra!"]
+            with open(nombre_archivo, "w", encoding="utf-8") as f:
+                f.write("\n".join(lineas))
+            self.title = 'Comprobante de Venta (guardado ✓)'
+        except Exception as e:
+            print(f"[AVISO] No se pudo guardar el ticket: {e}")
+            self.title = 'Comprobante de Venta (no se pudo guardar)'
 
 
 class BaseScreen(Screen):
@@ -557,65 +893,93 @@ class VentaScreen(BaseScreen):
                                 color=Theme.PRIMARY, size_hint_y=None, height=dp(30))
         self.content_layout.add_widget(self.lbl_total)
 
+        self.banner = MessageBanner()
+        self.content_layout.add_widget(self.banner)
+
         botones_pago = BoxLayout(size_hint_y=None, height=dp(54), spacing=dp(10))
         btn_efectivo = RoundedButton(text='Cobrar Efectivo', icon='efectivo', font_size=sp(14),
                                       bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
-        btn_efectivo.bind(on_release=lambda x: self.cobrar('efectivo'))
+        btn_efectivo.bind(on_release=lambda x: self.iniciar_cobro('efectivo'))
 
         btn_qr = RoundedButton(text='Cobrar QR', icon='qr', font_size=sp(14),
                                 bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK)
-        btn_qr.bind(on_release=lambda x: self.cobrar('qr'))
+        btn_qr.bind(on_release=lambda x: self.iniciar_cobro('qr'))
 
         botones_pago.add_widget(btn_efectivo)
         botones_pago.add_widget(btn_qr)
         self.content_layout.add_widget(botones_pago)
 
     def on_enter(self):
-        GlobalData.carrito = []
+        self.banner.hide()
         self.actualizar_carrito_vista()
         self.input_buscar.text = ''
         self.filtrar_productos(None, '')
 
+    def on_leave(self):
+        self._devolver_stock_carrito()
+
+    def _devolver_stock_carrito(self):
+        """Si se sale de la pantalla sin confirmar la venta, las unidades
+        reservadas del carrito regresan al inventario."""
+        if not GlobalData.carrito:
+            return
+        for item in GlobalData.carrito:
+            producto = next((p for p in GlobalData.inventario if p['nombre'] == item['nombre']), None)
+            if producto:
+                producto['stock'] += item['cantidad']
+        GlobalData.carrito = []
+        guardar_datos()
+
     def filtrar_productos(self, instance, valor):
         self.lista_resultados.clear_widgets()
         filtro = valor.lower()
-        nombres_en_carrito = {item['nombre'] for item in GlobalData.carrito}
+        cantidades_en_carrito = {item['nombre']: item['cantidad'] for item in GlobalData.carrito}
         for prod in GlobalData.inventario:
             if filtro in prod['nombre'].lower():
-                en_carrito = prod['nombre'] in nombres_en_carrito
-                if en_carrito:
-                    texto = f"{prod['nombre']}  ·  En el carrito ✓  (ajusta con +/- abajo)"
+                ya = cantidades_en_carrito.get(prod['nombre'], 0)
+                if prod['stock'] <= 0:
+                    texto = f"{prod['nombre']}  ·  Sin stock"
+                    if ya:
+                        texto += f"  ·  {ya} en el carrito"
                     btn = RoundedButton(
-                        text=texto, icon='check', font_size=sp(12),
+                        text=texto, icon='alerta', font_size=sp(12),
                         bg_color=Theme.NEUTRAL_DARK, bg_color_dark=Theme.NEUTRAL_DARK,
-                        text_color=Theme.TEXT_MUTED, icon_size=dp(15),
+                        text_color=Theme.TEXT_DIM, icon_size=dp(15),
                         size_hint_y=None, height=dp(44), radius=Theme.RADIUS_SM,
                     )
                 else:
                     alerta = "  ¡STOCK BAJO!" if prod['stock'] <= 5 else ""
-                    texto = f"{prod['nombre']}  ·  Stock {prod['stock']}  ·  {prod['precio']} Bs{alerta}"
+                    extra = f"  ·  {ya} en el carrito" if ya else ""
+                    texto = f"{prod['nombre']}  ·  Stock {prod['stock']}  ·  {prod['precio']} Bs{alerta}{extra}"
                     btn = RoundedButton(
                         text=texto, icon='plus', font_size=sp(12.5),
                         bg_color=Theme.SURFACE, bg_color_dark=Theme.NEUTRAL_DARK,
                         text_color=Theme.TEXT, icon_size=dp(16),
                         size_hint_y=None, height=dp(46), radius=Theme.RADIUS_SM,
                     )
-                    btn.bind(on_release=lambda x, p=prod: self.agregar_al_carrito(p))
+                    btn.bind(on_release=lambda x, p=prod: self.abrir_modal_cantidad(p))
                 self.lista_resultados.add_widget(btn)
 
-    def agregar_al_carrito(self, producto):
-        ya_en_carrito = any(item['nombre'] == producto['nombre'] for item in GlobalData.carrito)
-        if ya_en_carrito:
-            # Ya está en el carrito: usa los botones +/- del carrito para ajustar
-            # la cantidad, así un toque de más aquí no suma una venta extra.
+    def abrir_modal_cantidad(self, producto):
+        if producto['stock'] <= 0:
             return
-        if producto['stock'] > 0:
+        modal = CantidadModal(producto, on_agregar=lambda cant: self.agregar_al_carrito(producto, cant))
+        modal.open()
+
+    def agregar_al_carrito(self, producto, cantidad):
+        cantidad = max(0, min(cantidad, producto['stock']))
+        if cantidad <= 0:
+            return
+        en_carrito = next((item for item in GlobalData.carrito if item['nombre'] == producto['nombre']), None)
+        if en_carrito:
+            en_carrito['cantidad'] += cantidad
+        else:
             GlobalData.carrito.append({'nombre': producto['nombre'], 'precio': producto['precio'],
-                                        'costo': producto['costo'], 'cantidad': 1})
-            producto['stock'] -= 1
-            guardar_datos()
-            self.actualizar_carrito_vista()
-            self.filtrar_productos(None, self.input_buscar.text)
+                                        'costo': producto['costo'], 'cantidad': cantidad})
+        producto['stock'] -= cantidad
+        guardar_datos()
+        self.actualizar_carrito_vista()
+        self.filtrar_productos(None, self.input_buscar.text)
 
     def cambiar_cantidad(self, item, delta):
         producto = next((p for p in GlobalData.inventario if p['nombre'] == item['nombre']), None)
@@ -674,12 +1038,28 @@ class VentaScreen(BaseScreen):
             self.lista_carrito.add_widget(row)
         self.lbl_total.text = f'Total: {total:.2f} Bs'
 
-    def cobrar(self, metodo):
-        if not GlobalData.carrito or not GlobalData.caja_abierta:
+    def iniciar_cobro(self, metodo):
+        if not GlobalData.caja_abierta:
+            self.banner.show('La caja debe estar abierta para vender.', 'error')
+            return
+        if not GlobalData.carrito:
+            self.banner.show('El carrito está vacío.', 'error')
+            return
+        total_venta = sum(i['precio'] * i['cantidad'] for i in GlobalData.carrito)
+        items = [dict(i) for i in GlobalData.carrito]
+        modal = ConfirmVentaModal(
+            items=items, total=total_venta, metodo=metodo,
+            on_confirmar=lambda: self._procesar_venta(metodo),
+        )
+        modal.open()
+
+    def _procesar_venta(self, metodo):
+        if not GlobalData.carrito:
             return
         total_venta = sum(i['precio'] * i['cantidad'] for i in GlobalData.carrito)
         ganancia_venta = sum((i['precio'] - i['costo']) * i['cantidad'] for i in GlobalData.carrito)
-        detalle = ", ".join([f"{i['nombre']} x{i['cantidad']}" for i in GlobalData.carrito])
+        productos_venta = [dict(nombre=i['nombre'], cantidad=i['cantidad'], precio=i['precio'])
+                            for i in GlobalData.carrito]
 
         if metodo == 'efectivo':
             GlobalData.total_ventas_efectivo += total_venta
@@ -687,15 +1067,28 @@ class VentaScreen(BaseScreen):
             GlobalData.total_ventas_qr += total_venta
         GlobalData.total_ganancias += ganancia_venta
 
+        GlobalData.contador_ventas += 1
+        ticket_num = GlobalData.contador_ventas
+        ahora = datetime.now()
+        fecha_txt = ahora.strftime("%d/%m/%Y")
+        hora_txt = ahora.strftime("%H:%M:%S")
+
         GlobalData.historial_ventas.append({
-            "hora": datetime.now().strftime("%H:%M:%S"),
+            "ticket": ticket_num,
+            "fecha": fecha_txt,
+            "hora": hora_txt,
             "metodo": metodo.upper(),
             "total": total_venta,
-            "productos": detalle
+            "productos": productos_venta,
         })
         GlobalData.carrito = []
         guardar_datos()
         self.actualizar_carrito_vista()
+        self.filtrar_productos(None, self.input_buscar.text)
+
+        ticket_modal = TicketModal(ticket_num=ticket_num, fecha=fecha_txt, hora=hora_txt,
+                                    productos=productos_venta, total=total_venta, metodo=metodo)
+        ticket_modal.open()
 
 
 class InventarioScreen(BaseScreen):
@@ -712,8 +1105,12 @@ class InventarioScreen(BaseScreen):
         btn_agregar = RoundedButton(text='Nuevo Producto / Stock', icon='plus', font_size=sp(14),
                                      bg_color=Theme.WARNING, bg_color_dark=Theme.WARNING_DARK,
                                      size_hint_y=None, height=dp(50))
-        btn_agregar.bind(on_release=lambda x: setattr(self.manager, 'current', 'ingreso'))
+        btn_agregar.bind(on_release=self.ir_a_nuevo_producto)
         self.content_layout.add_widget(btn_agregar)
+
+    def ir_a_nuevo_producto(self, instance):
+        self.manager.get_screen('ingreso').cargar_para_nuevo()
+        self.manager.current = 'ingreso'
 
     def on_enter(self):
         self.lista_layout.clear_widgets()
@@ -721,24 +1118,36 @@ class InventarioScreen(BaseScreen):
             bajo = prod['stock'] <= 5
             badge_color = Theme.DANGER if bajo else Theme.PRIMARY
 
-            row = RoundedCard(orientation='horizontal', padding=(dp(14), dp(10)),
-                               spacing=dp(10), size_hint_y=None, height=dp(66))
+            row = RoundedCard(orientation='vertical', padding=(dp(14), dp(10)),
+                               spacing=dp(6), size_hint_y=None, height=dp(90))
 
-            info = BoxLayout(orientation='vertical', spacing=dp(3))
+            fila_sup = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(34))
             nombre_lbl = Label(text=prod['nombre'], font_size=sp(14.5), bold=True,
                                 color=Theme.TEXT, halign='left', valign='middle',
-                                size_hint_y=None, height=dp(20))
+                                shorten=True, shorten_from='right')
             nombre_lbl.bind(size=nombre_lbl.setter('text_size'))
+            btn_editar = RoundedButton(icon='editar', bg_color=Theme.ACCENT_BLUE,
+                                        bg_color_dark=Theme.ACCENT_BLUE_DARK, icon_size=dp(16),
+                                        size_hint=(None, None), size=(dp(34), dp(34)), radius=dp(9))
+            btn_editar.bind(on_release=lambda x, p=prod: self.editar_producto(p))
+            btn_eliminar = RoundedButton(icon='eliminar', bg_color=Theme.DANGER,
+                                          bg_color_dark=Theme.DANGER_DARK, icon_size=dp(16),
+                                          size_hint=(None, None), size=(dp(34), dp(34)), radius=dp(9))
+            btn_eliminar.bind(on_release=lambda x, p=prod: self.confirmar_eliminar(p))
+            fila_sup.add_widget(nombre_lbl)
+            fila_sup.add_widget(btn_editar)
+            fila_sup.add_widget(btn_eliminar)
+            row.add_widget(fila_sup)
+
+            fila_inf = BoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(40))
             precio_lbl = Label(text=f"Compra {prod['costo']:.2f} Bs  ·  Venta {prod['precio']:.2f} Bs",
                                 font_size=sp(12), color=Theme.TEXT_MUTED,
-                                halign='left', valign='middle', size_hint_y=None, height=dp(18))
+                                halign='left', valign='middle')
             precio_lbl.bind(size=precio_lbl.setter('text_size'))
-            info.add_widget(nombre_lbl)
-            info.add_widget(precio_lbl)
-            row.add_widget(info)
+            fila_inf.add_widget(precio_lbl)
 
             badge = BoxLayout(orientation='vertical', size_hint=(None, None),
-                               size=(dp(66), dp(46)))
+                               size=(dp(64), dp(40)))
             with badge.canvas.before:
                 Color(badge_color[0], badge_color[1], badge_color[2], 0.16)
                 badge_rect = RoundedRectangle(size=badge.size, pos=badge.pos, radius=[dp(10)])
@@ -746,21 +1155,47 @@ class InventarioScreen(BaseScreen):
                 pos=lambda inst, val, r=badge_rect: setattr(r, 'pos', val),
                 size=lambda inst, val, r=badge_rect: setattr(r, 'size', val),
             )
-            stock_lbl = Label(text=str(prod['stock']), font_size=sp(17), bold=True,
-                               color=badge_color, size_hint_y=None, height=dp(24))
-            cap_lbl = Label(text='bajo' if bajo else 'stock', font_size=sp(9.5),
-                             color=badge_color, size_hint_y=None, height=dp(14))
+            stock_lbl = Label(text=str(prod['stock']), font_size=sp(16), bold=True,
+                               color=badge_color, size_hint_y=None, height=dp(22))
+            cap_lbl = Label(text='bajo' if bajo else 'stock', font_size=sp(9),
+                             color=badge_color, size_hint_y=None, height=dp(13))
             badge.add_widget(stock_lbl)
             badge.add_widget(cap_lbl)
-            row.add_widget(badge)
+            fila_inf.add_widget(badge)
+            row.add_widget(fila_inf)
 
             self.lista_layout.add_widget(row)
+
+    def editar_producto(self, producto):
+        self.manager.get_screen('ingreso').cargar_para_editar(producto)
+        self.manager.current = 'ingreso'
+
+    def confirmar_eliminar(self, producto):
+        modal = ConfirmModal(
+            titulo='Eliminar producto',
+            mensaje=f"¿Está seguro de eliminar \"{producto['nombre']}\"?\nEsta acción no se puede deshacer.",
+            texto_confirmar='Eliminar', icono_confirmar='eliminar',
+            color_confirmar=Theme.DANGER, color_confirmar_dark=Theme.DANGER_DARK,
+            on_confirmar=lambda: self.eliminar_producto(producto),
+        )
+        modal.open()
+
+    def eliminar_producto(self, producto):
+        if producto in GlobalData.inventario:
+            GlobalData.inventario.remove(producto)
+        # Si el producto estaba reservado en un carrito de venta activo, se retira también.
+        GlobalData.carrito = [i for i in GlobalData.carrito if i['nombre'] != producto['nombre']]
+        guardar_datos()
+        self.on_enter()
 
 
 class IngresoProductoScreen(BaseScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.content_layout.add_widget(make_title('Registrar / Actualizar Producto'))
+        self.producto_editando = None  # None = modo "nuevo producto"; dict = editando ese producto
+
+        self.titulo_lbl = make_title('Nuevo Producto')
+        self.content_layout.add_widget(self.titulo_lbl)
 
         self.input_nombre = RoundedInput(hint_text='Nombre del producto', multiline=False,
                                           size_hint_y=None, height=dp(52), font_size=sp(14))
@@ -782,11 +1217,11 @@ class IngresoProductoScreen(BaseScreen):
         self.banner = MessageBanner()
         self.content_layout.add_widget(self.banner)
 
-        btn_guardar = RoundedButton(text='Guardar', icon='check', font_size=sp(15),
-                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK,
-                                     size_hint_y=None, height=dp(52))
-        btn_guardar.bind(on_release=self.guardar_producto)
-        self.content_layout.add_widget(btn_guardar)
+        self.btn_guardar = RoundedButton(text='Guardar', icon='check', font_size=sp(15),
+                                          bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK,
+                                          size_hint_y=None, height=dp(52))
+        self.btn_guardar.bind(on_release=self.guardar_producto)
+        self.content_layout.add_widget(self.btn_guardar)
 
         btn_volver = RoundedButton(text='Volver al Inventario', icon='back', font_size=sp(13),
                                     bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK,
@@ -796,32 +1231,67 @@ class IngresoProductoScreen(BaseScreen):
 
         self.content_layout.add_widget(Widget())
 
+    def _limpiar_campos(self):
+        self.input_nombre.text = ''
+        self.input_stock.text = ''
+        self.input_costo.text = ''
+        self.input_precio.text = ''
+        self.banner.hide()
+
+    def cargar_para_nuevo(self):
+        self.producto_editando = None
+        self.titulo_lbl.text = 'Nuevo Producto'
+        self.btn_guardar.label.text = 'Guardar'
+        self._limpiar_campos()
+
+    def cargar_para_editar(self, producto):
+        self.producto_editando = producto
+        self.titulo_lbl.text = 'Editar Producto'
+        self.btn_guardar.label.text = 'Guardar Cambios'
+        self.input_nombre.text = producto['nombre']
+        self.input_stock.text = str(producto['stock'])
+        self.input_costo.text = str(producto['costo'])
+        self.input_precio.text = str(producto['precio'])
+        self.banner.hide()
+
     def guardar_producto(self, instance):
         try:
             nombre = self.input_nombre.text.strip()
-            stock = int(self.input_stock.text)
-            costo = float(self.input_costo.text)
-            precio = float(self.input_precio.text)
+            stock = int(self.input_stock.text) if self.input_stock.text else 0
+            costo = float(self.input_costo.text) if self.input_costo.text else 0.0
+            precio = float(self.input_precio.text) if self.input_precio.text else 0.0
+
             if not nombre:
+                self.banner.show('Ingresa un nombre de producto.', 'error')
+                return
+            if stock < 0 or costo < 0 or precio < 0:
+                self.banner.show('Los valores no pueden ser negativos.', 'error')
                 return
 
-            encontrado = False
-            for p in GlobalData.inventario:
-                if p['nombre'].lower() == nombre.lower():
-                    p['stock'] += stock
-                    p['costo'] = costo
-                    p['precio'] = precio
-                    encontrado = True
-                    break
-            if not encontrado:
-                GlobalData.inventario.append({"nombre": nombre, "stock": stock, "costo": costo, "precio": precio})
-
-            guardar_datos()
-            self.banner.show('¡Guardado con éxito!', 'success')
-            self.input_nombre.text = ''
-            self.input_stock.text = ''
-            self.input_costo.text = ''
-            self.input_precio.text = ''
+            if self.producto_editando is not None:
+                # Modo edición: reemplaza los datos tal cual (no suma stock).
+                self.producto_editando['nombre'] = nombre
+                self.producto_editando['stock'] = stock
+                self.producto_editando['costo'] = costo
+                self.producto_editando['precio'] = precio
+                guardar_datos()
+                self.banner.show('¡Producto actualizado!', 'success')
+            else:
+                # Modo nuevo: si el nombre ya existe, suma el stock (comportamiento previo).
+                encontrado = False
+                for p in GlobalData.inventario:
+                    if p['nombre'].lower() == nombre.lower():
+                        p['stock'] += stock
+                        p['costo'] = costo
+                        p['precio'] = precio
+                        encontrado = True
+                        break
+                if not encontrado:
+                    GlobalData.inventario.append(
+                        {"nombre": nombre, "stock": stock, "costo": costo, "precio": precio})
+                guardar_datos()
+                self.banner.show('¡Guardado con éxito!', 'success')
+                self._limpiar_campos()
         except ValueError:
             self.banner.show('Verifique los campos numéricos.', 'error')
 
