@@ -18,7 +18,7 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning
 version = 0.1
 
-# (list) Application requirements (usando python3.11 compatible)
+# (list) Application requirements
 requirements = python3.11, https://github.com/kivy/kivy/archive/refs/tags/2.3.0.zip
 
 # (str) Supported orientations
@@ -42,8 +42,8 @@ android.api = 33
 android.minapi = 21
 android.build_tools_version = 33.0.2
 
-# (list) Android application architectures
-android.archs = arm64-v8a, armeabi-v7a
+# (list) Android application architectures (reducido a una sola para evitar fallos en CI)
+android.archs = arm64-v8a
 
 # (bool) Enable AndroidX support
 android.enable_androidx = True
