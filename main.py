@@ -10,7 +10,7 @@ Guarda todo en 'sistema_caja_gastronomico.json' junto al script.
 import json
 import os
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
@@ -56,6 +56,7 @@ def cargar_datos():
         "contador_ventas": 0,
         "contador_gastos": 0,
         "contador_comandas": 0,
+        "config": {"num_mesas": 6},
     }
 
 
@@ -72,6 +73,7 @@ def guardar_datos():
         "contador_ventas": GlobalData.contador_ventas,
         "contador_gastos": GlobalData.contador_gastos,
         "contador_comandas": GlobalData.contador_comandas,
+        "config": GlobalData.config,
     }
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -93,6 +95,7 @@ class GlobalData:
     contador_ventas = datos.get("contador_ventas", 0)
     contador_gastos = datos.get("contador_gastos", 0)
     contador_comandas = datos.get("contador_comandas", 0)
+    config = datos.get("config", {"num_mesas": 6})
 
 
 def calcular_arqueo_caja():
@@ -122,6 +125,52 @@ def ranking_platos(top_n=10):
         for it in v.get('items', []):
             conteo[it['nombre']] = conteo.get(it['nombre'], 0) + it['cantidad']
     return sorted(conteo.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+
+
+# ---------------------------------------------------------------------------
+# EXPORTACIÓN DE TICKETS: texto plano listo para impresoras térmicas 58/80mm
+# ---------------------------------------------------------------------------
+def generar_texto_ticket(venta, ancho=32):
+    """Arma el ticket como texto plano monoespaciado, listo para enviar
+    directo a una impresora térmica (58mm ~ 32 col, 80mm ~ 48 col)."""
+    linea_sep = '-' * ancho
+    partes = []
+    partes.append(f"VENTA #{venta['ticket']:04d}".center(ancho))
+    partes.append(venta['mesa'].center(ancho))
+    partes.append(f"{venta['fecha']} {venta['hora']}".center(ancho))
+    partes.append(linea_sep)
+    for it in venta['items']:
+        sub = it['precio'] * it['cantidad']
+        nombre = it['nombre'][:ancho]
+        partes.append(nombre)
+        if it.get('nota'):
+            partes.append(f"  ({it['nota']})"[:ancho])
+        detalle = f"{it['cantidad']} x {it['precio']:.2f}"
+        monto = f"{sub:.2f}"
+        espacio = max(1, ancho - len(detalle) - len(monto))
+        partes.append(detalle + (' ' * espacio) + monto)
+    partes.append(linea_sep)
+    total_txt = f"TOTAL: {venta['total']:.2f} Bs"
+    partes.append(total_txt.center(ancho))
+    metodo_txt = venta['metodo']
+    if metodo_txt == 'MIXTO':
+        metodo_txt += f" (Efvo {venta['monto_efectivo']:.2f}/QR {venta['monto_qr']:.2f})"
+    partes.append(f"Pago: {metodo_txt}".center(ancho))
+    partes.append(linea_sep)
+    partes.append('¡Gracias por su visita!'.center(ancho))
+    return '\n'.join(partes)
+
+
+def exportar_ticket_txt(venta, ancho=32):
+    """Guarda el ticket como .txt en una carpeta 'tickets' junto a los datos."""
+    texto = generar_texto_ticket(venta, ancho)
+    base_dir = os.path.dirname(os.path.abspath(DATA_FILE))
+    carpeta = os.path.join(base_dir, 'tickets')
+    os.makedirs(carpeta, exist_ok=True)
+    ruta = os.path.join(carpeta, f"ticket_{venta['ticket']:04d}.txt")
+    with open(ruta, 'w', encoding='utf-8') as f:
+        f.write(texto)
+    return ruta
 
 
 # ---------------------------------------------------------------------------
@@ -682,11 +731,159 @@ class CatalogoModal(Popup):
         self.dismiss()
 
 
+class SplitCuentaModal(Popup):
+    """Calculadora de división de cuenta: partes iguales o por consumo individual.
+    Es una herramienta de cálculo para el cajero; no modifica la venta."""
+
+    def __init__(self, total, items, **kwargs):
+        self.total = total
+        self.items = items or []
+        self.modo = 'igual'
+        self.num_personas = 2
+        self.asignaciones = {i: 1 for i in range(len(self.items))}
+
+        content = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(16))
+
+        fila_tabs = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(8))
+        self.btn_igual = RoundedButton(text='Partes Iguales', font_size=sp(11.5),
+                                        bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
+        self.btn_consumo = RoundedButton(text='Por Consumo', font_size=sp(11.5),
+                                          bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK)
+        self.btn_igual.bind(on_release=lambda x: self._cambiar_modo('igual'))
+        self.btn_consumo.bind(on_release=lambda x: self._cambiar_modo('consumo'))
+        fila_tabs.add_widget(self.btn_igual)
+        fila_tabs.add_widget(self.btn_consumo)
+        content.add_widget(fila_tabs)
+
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.contenedor = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        self.contenedor.bind(minimum_height=self.contenedor.setter('height'))
+        self.scroll.add_widget(self.contenedor)
+        content.add_widget(self.scroll)
+
+        btn_cerrar = RoundedButton(text='Cerrar', icon='cerrar', font_size=sp(13),
+                                    bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK,
+                                    size_hint_y=None, height=dp(46))
+        content.add_widget(btn_cerrar)
+
+        super().__init__(content=content, auto_dismiss=True, size_hint=(0.92, 0.85),
+                          **{k: v for k, v in _popup_kwargs('Dividir Cuenta').items() if k != 'size_hint'},
+                          **kwargs)
+        btn_cerrar.bind(on_release=lambda x: self.dismiss())
+        self._cambiar_modo('igual')
+
+    def _cambiar_modo(self, modo):
+        self.modo = modo
+        activo_igual = modo == 'igual'
+        self.btn_igual.bg_color = Theme.PRIMARY if activo_igual else Theme.NEUTRAL
+        self.btn_igual.bg_color_dark = Theme.PRIMARY_DARK if activo_igual else Theme.NEUTRAL_DARK
+        self.btn_igual._color.rgba = self.btn_igual.bg_color
+        self.btn_consumo.bg_color = Theme.NEUTRAL if activo_igual else Theme.PRIMARY
+        self.btn_consumo.bg_color_dark = Theme.NEUTRAL_DARK if activo_igual else Theme.PRIMARY_DARK
+        self.btn_consumo._color.rgba = self.btn_consumo.bg_color
+        if modo == 'igual':
+            self._mostrar_partes_iguales()
+        else:
+            self._mostrar_por_consumo()
+
+    def _mostrar_partes_iguales(self):
+        self.contenedor.clear_widgets()
+        stepper = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(14))
+        lbl = Label(text='Personas:', font_size=sp(14), color=Theme.TEXT, size_hint_x=None, width=dp(90))
+        btn_menos = RoundedButton(text='-', font_size=sp(18), bg_color=Theme.NEUTRAL,
+                                   bg_color_dark=Theme.NEUTRAL_DARK, size_hint=(None, None), size=(dp(44), dp(44)))
+        self.lbl_num = Label(text=str(self.num_personas), font_size=sp(18), bold=True, color=Theme.TEXT,
+                              size_hint_x=None, width=dp(40))
+        btn_mas = RoundedButton(text='+', font_size=sp(18), bg_color=Theme.NEUTRAL,
+                                 bg_color_dark=Theme.NEUTRAL_DARK, size_hint=(None, None), size=(dp(44), dp(44)))
+        btn_menos.bind(on_release=lambda x: self._cambiar_num(-1))
+        btn_mas.bind(on_release=lambda x: self._cambiar_num(1))
+        stepper.add_widget(lbl)
+        stepper.add_widget(btn_menos)
+        stepper.add_widget(self.lbl_num)
+        stepper.add_widget(btn_mas)
+        self.contenedor.add_widget(stepper)
+
+        self.lbl_resultado = Label(text='', font_size=sp(15), color=Theme.PRIMARY, bold=True,
+                                    size_hint_y=None, height=dp(70), halign='center', valign='middle')
+        self.lbl_resultado.bind(size=self.lbl_resultado.setter('text_size'))
+        self.contenedor.add_widget(self.lbl_resultado)
+        self._actualizar_resultado_igual()
+
+    def _cambiar_num(self, delta):
+        self.num_personas = max(1, min(self.num_personas + delta, 50))
+        self.lbl_num.text = str(self.num_personas)
+        self._actualizar_resultado_igual()
+
+    def _actualizar_resultado_igual(self):
+        n = self.num_personas
+        base = math.floor((self.total / n) * 100) / 100
+        resto = round(self.total - base * n, 2)
+        texto = f"Cada persona paga: {base:.2f} Bs"
+        if resto > 0.001:
+            texto += f"\n(Ajuste: una persona paga {base + resto:.2f} Bs para cuadrar el total)"
+        self.lbl_resultado.text = texto
+
+    def _mostrar_por_consumo(self):
+        self.contenedor.clear_widgets()
+        if not self.items:
+            self.contenedor.add_widget(Label(text='No hay productos para asignar.', font_size=sp(13),
+                                              color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(36)))
+            return
+        for i, it in enumerate(self.items):
+            fila = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(44), spacing=dp(6))
+            sub = it['precio'] * it['cantidad']
+            texto = f"{it['cantidad']}x {it['nombre']}  ·  {sub:.2f} Bs"
+            lbl = Label(text=texto, font_size=sp(12), color=Theme.TEXT, halign='left', valign='middle',
+                        shorten=True, shorten_from='right')
+            lbl.bind(size=lbl.setter('text_size'))
+            btn_menos = RoundedButton(text='-', font_size=sp(14), bg_color=Theme.NEUTRAL,
+                                       bg_color_dark=Theme.NEUTRAL_DARK, size_hint=(None, None),
+                                       size=(dp(30), dp(30)), radius=dp(8))
+            lbl_cliente = Label(text=f"C{self.asignaciones[i]}", font_size=sp(12), bold=True, color=Theme.PRIMARY,
+                                 size_hint=(None, None), size=(dp(32), dp(30)))
+            btn_mas = RoundedButton(text='+', font_size=sp(14), bg_color=Theme.NEUTRAL,
+                                     bg_color_dark=Theme.NEUTRAL_DARK, size_hint=(None, None),
+                                     size=(dp(30), dp(30)), radius=dp(8))
+            btn_menos.bind(on_release=lambda x, idx=i, l=lbl_cliente: self._cambiar_cliente(idx, -1, l))
+            btn_mas.bind(on_release=lambda x, idx=i, l=lbl_cliente: self._cambiar_cliente(idx, 1, l))
+            fila.add_widget(lbl)
+            fila.add_widget(btn_menos)
+            fila.add_widget(lbl_cliente)
+            fila.add_widget(btn_mas)
+            self.contenedor.add_widget(fila)
+
+        self.lbl_resultado_consumo = Label(text='', font_size=sp(13), bold=True, color=Theme.PRIMARY,
+                                            size_hint_y=None, halign='left', valign='top')
+        self.lbl_resultado_consumo.bind(
+            texture_size=lambda i, v: setattr(self.lbl_resultado_consumo, 'height', v[1] + dp(10)))
+        self.lbl_resultado_consumo.bind(
+            width=lambda i, v: setattr(self.lbl_resultado_consumo, 'text_size', (v, None)))
+        self.contenedor.add_widget(self.lbl_resultado_consumo)
+        self._actualizar_resultado_consumo()
+
+    def _cambiar_cliente(self, idx, delta, lbl_widget):
+        nuevo = max(1, self.asignaciones[idx] + delta)
+        self.asignaciones[idx] = nuevo
+        lbl_widget.text = f"C{nuevo}"
+        self._actualizar_resultado_consumo()
+
+    def _actualizar_resultado_consumo(self):
+        totales = {}
+        for i, it in enumerate(self.items):
+            cliente = self.asignaciones[i]
+            sub = it['precio'] * it['cantidad']
+            totales[cliente] = totales.get(cliente, 0.0) + sub
+        lineas = [f"Cliente {c}: {monto:.2f} Bs" for c, monto in sorted(totales.items())]
+        self.lbl_resultado_consumo.text = '\n'.join(lineas)
+
+
 class PagoModal(Popup):
     """Cobro flexible: efectivo, QR o mixto (con ambos montos)."""
 
-    def __init__(self, total, on_confirmar, **kwargs):
+    def __init__(self, total, on_confirmar, items=None, **kwargs):
         self.total = total
+        self.items = items or []
         self.metodo = 'EFECTIVO'
         self.on_confirmar_cb = on_confirmar
 
@@ -694,6 +891,12 @@ class PagoModal(Popup):
         lbl_total = Label(text=f'Total a cobrar: {total:.2f} Bs', font_size=sp(17), bold=True,
                            color=Theme.PRIMARY, size_hint_y=None, height=dp(26))
         content.add_widget(lbl_total)
+
+        btn_dividir = RoundedButton(text='Dividir Cuenta', icon='resumen', font_size=sp(12),
+                                     bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK,
+                                     size_hint_y=None, height=dp(40))
+        btn_dividir.bind(on_release=lambda x: SplitCuentaModal(total=self.total, items=self.items).open())
+        content.add_widget(btn_dividir)
 
         fila_metodos = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         self.btn_efectivo = RoundedButton(text='Efectivo', icon='efectivo', font_size=sp(12),
@@ -731,7 +934,7 @@ class PagoModal(Popup):
         botones.add_widget(btn_confirmar)
         content.add_widget(botones)
 
-        super().__init__(content=content, auto_dismiss=False, height=dp(370),
+        super().__init__(content=content, auto_dismiss=False, height=dp(420),
                           **_popup_kwargs('Cobrar Cuenta'), **kwargs)
 
         btn_cancelar.bind(on_release=lambda x: self.dismiss())
@@ -813,10 +1016,54 @@ class PostPagoModal(Popup):
         btn_mantener.bind(on_release=_mantener)
 
 
+class FusionarMesaModal(Popup):
+    """Lista mesas/pedidos ocupados (no pagados) para transferir sus productos
+    a la mesa actual y liberar la mesa de origen."""
+
+    def __init__(self, mesa_actual, on_elegir, **kwargs):
+        self.on_elegir_cb = on_elegir
+        candidatas = [c for c in GlobalData.comandas
+                      if c['nombre'] != mesa_actual['nombre'] and c['items'] and not c.get('pagada')]
+
+        content = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(16))
+        if not candidatas:
+            content.add_widget(Label(text='No hay otras mesas ocupadas para unir.', font_size=sp(13),
+                                      color=Theme.TEXT_MUTED, halign='center', valign='middle'))
+        else:
+            scroll = ScrollView(size_hint=(1, 1))
+            lista = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
+            lista.bind(minimum_height=lista.setter('height'))
+            for c in candidatas:
+                total = sum(it['precio'] * it['cantidad'] for it in c['items'])
+                btn = RoundedButton(
+                    text=f"{c['nombre']}  ·  {len(c['items'])} items  ·  {total:.2f} Bs",
+                    icon='mesa', font_size=sp(12.5), bg_color=Theme.SURFACE, bg_color_dark=Theme.NEUTRAL_DARK,
+                    icon_size=dp(15), size_hint_y=None, height=dp(48), radius=Theme.RADIUS_SM)
+                btn.bind(on_release=lambda x, m=c: self._elegir(m))
+                lista.add_widget(btn)
+            scroll.add_widget(lista)
+            content.add_widget(scroll)
+
+        btn_cerrar = RoundedButton(text='Cancelar', bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK,
+                                    font_size=sp(14), size_hint_y=None, height=dp(46))
+        content.add_widget(btn_cerrar)
+
+        super().__init__(content=content, auto_dismiss=True, size_hint=(0.88, 0.7),
+                          **{k: v for k, v in _popup_kwargs('Unir con Otra Mesa').items() if k != 'size_hint'},
+                          **kwargs)
+        btn_cerrar.bind(on_release=lambda x: self.dismiss())
+
+    def _elegir(self, mesa_origen):
+        self.dismiss()
+        self.on_elegir_cb(mesa_origen)
+
+
 class TicketModal(Popup):
     """Comprobante de venta para el cliente."""
 
     def __init__(self, venta, **kwargs):
+        self.venta = venta
+        self.ancho_impresion = 32
         content = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(18))
         scroll = ScrollView(size_hint=(1, 1))
         info = BoxLayout(orientation='vertical', spacing=dp(4), size_hint_y=None, padding=(0, dp(4)))
@@ -854,15 +1101,52 @@ class TicketModal(Popup):
         content.add_widget(Label(text='¡Gracias por su visita!', font_size=sp(13), italic=True,
                                   color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(24)))
 
+        fila_ancho = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8))
+        self.btn_58 = RoundedButton(text='58mm', font_size=sp(11.5), radius=dp(8),
+                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
+        self.btn_80 = RoundedButton(text='80mm', font_size=sp(11.5), radius=dp(8),
+                                     bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK)
+        self.btn_58.bind(on_release=lambda x: self._elegir_ancho(32))
+        self.btn_80.bind(on_release=lambda x: self._elegir_ancho(48))
+        fila_ancho.add_widget(self.btn_58)
+        fila_ancho.add_widget(self.btn_80)
+        content.add_widget(fila_ancho)
+
+        self.banner_export = MessageBanner()
+        content.add_widget(self.banner_export)
+
+        btn_exportar = RoundedButton(text='Exportar Ticket (TXT)', icon='ticket', font_size=sp(13),
+                                      bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK,
+                                      size_hint_y=None, height=dp(48))
+        btn_exportar.bind(on_release=lambda x: self._exportar())
+        content.add_widget(btn_exportar)
+
         btn_cerrar = RoundedButton(text='Cerrar', icon='cerrar', font_size=sp(14),
                                     bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK,
                                     size_hint_y=None, height=dp(48))
         content.add_widget(btn_cerrar)
 
-        super().__init__(content=content, auto_dismiss=True, size_hint=(0.9, 0.82),
+        super().__init__(content=content, auto_dismiss=True, size_hint=(0.9, 0.9),
                           **{k: v for k, v in _popup_kwargs('Comprobante de Venta').items() if k != 'size_hint'},
                           **kwargs)
         btn_cerrar.bind(on_release=lambda x: self.dismiss())
+
+    def _elegir_ancho(self, ancho):
+        self.ancho_impresion = ancho
+        activo_58 = ancho == 32
+        self.btn_58.bg_color = Theme.PRIMARY if activo_58 else Theme.NEUTRAL
+        self.btn_58.bg_color_dark = Theme.PRIMARY_DARK if activo_58 else Theme.NEUTRAL_DARK
+        self.btn_58._color.rgba = self.btn_58.bg_color
+        self.btn_80.bg_color = Theme.NEUTRAL if activo_58 else Theme.PRIMARY
+        self.btn_80.bg_color_dark = Theme.NEUTRAL_DARK if activo_58 else Theme.PRIMARY_DARK
+        self.btn_80._color.rgba = self.btn_80.bg_color
+
+    def _exportar(self):
+        try:
+            ruta = exportar_ticket_txt(self.venta, self.ancho_impresion)
+            self.banner_export.show(f'Ticket exportado: {os.path.basename(ruta)}', 'success')
+        except Exception:
+            self.banner_export.show('No se pudo exportar el ticket.', 'error')
 
 
 class ComandaTicketModal(Popup):
@@ -961,16 +1245,83 @@ class EditarGastoModal(Popup):
 # ---------------------------------------------------------------------------
 # PANTALLAS
 # ---------------------------------------------------------------------------
-class MesasScreen(BaseScreen):
-    NUM_MESAS = 6
+class ConfigMesasModal(Popup):
+    """Ajusta la cantidad total de mesas fijas del local."""
 
+    def __init__(self, on_guardado, **kwargs):
+        self.on_guardado_cb = on_guardado
+
+        content = BoxLayout(orientation='vertical', spacing=dp(14), padding=dp(20))
+        lbl = Label(text='Cantidad total de mesas del local', font_size=sp(13.5),
+                    color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(20))
+        content.add_widget(lbl)
+
+        self.input_num = RoundedInput(text=str(GlobalData.config.get('num_mesas', 6)),
+                                       input_filter='int', multiline=False, font_size=sp(18),
+                                       size_hint_y=None, height=dp(52), halign='center')
+        content.add_widget(self.input_num)
+
+        fila_rapidos = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        for n in (10, 15, 20):
+            b = RoundedButton(text=str(n), font_size=sp(13), bg_color=Theme.NEUTRAL,
+                               bg_color_dark=Theme.NEUTRAL_DARK)
+            b.bind(on_release=lambda x, val=n: setattr(self.input_num, 'text', str(val)))
+            fila_rapidos.add_widget(b)
+        content.add_widget(fila_rapidos)
+
+        self.banner = MessageBanner()
+        content.add_widget(self.banner)
+
+        botones = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(12))
+        btn_cancelar = RoundedButton(text='Cancelar', bg_color=Theme.NEUTRAL,
+                                      bg_color_dark=Theme.NEUTRAL_DARK, font_size=sp(14))
+        btn_guardar = RoundedButton(text='Guardar', icon='check', font_size=sp(13.5),
+                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK)
+        botones.add_widget(btn_cancelar)
+        botones.add_widget(btn_guardar)
+        content.add_widget(botones)
+
+        super().__init__(content=content, auto_dismiss=False, height=dp(370),
+                          **_popup_kwargs('Configurar Mesas'), **kwargs)
+        btn_cancelar.bind(on_release=lambda x: self.dismiss())
+        btn_guardar.bind(on_release=self._guardar)
+
+    def _guardar(self, instance):
+        try:
+            n = int(self.input_num.text) if self.input_num.text else 0
+        except ValueError:
+            self.banner.show('Ingresa un número válido.', 'error')
+            return
+        if n < 1 or n > 200:
+            self.banner.show('La cantidad debe estar entre 1 y 200.', 'error')
+            return
+        GlobalData.config['num_mesas'] = n
+        guardar_datos()
+        self.dismiss()
+        self.on_guardado_cb()
+
+
+class MesasScreen(BaseScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.content_layout.add_widget(make_title('Mesas y Pedidos'))
 
+        fila_config = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        btn_config = RoundedButton(text='Configurar Mesas', icon='mesa', font_size=sp(12),
+                                    bg_color=Theme.NEUTRAL, bg_color_dark=Theme.NEUTRAL_DARK)
+        btn_config.bind(on_release=lambda x: self.abrir_config())
+        btn_add_mesa = RoundedButton(text='+1 Mesa', icon='plus', font_size=sp(12),
+                                      bg_color=Theme.WARNING, bg_color_dark=Theme.WARNING_DARK)
+        btn_add_mesa.bind(on_release=lambda x: self.agregar_mesa_rapida())
+        fila_config.add_widget(btn_config)
+        fila_config.add_widget(btn_add_mesa)
+        self.content_layout.add_widget(fila_config)
+
+        self.scroll_mesas = ScrollView(size_hint=(1, None), height=dp(280))
         self.grid_mesas = GridLayout(cols=3, spacing=dp(8), size_hint_y=None)
         self.grid_mesas.bind(minimum_height=self.grid_mesas.setter('height'))
-        self.content_layout.add_widget(self.grid_mesas)
+        self.scroll_mesas.add_widget(self.grid_mesas)
+        self.content_layout.add_widget(self.scroll_mesas)
 
         fila_nuevos = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         btn_llevar = RoundedButton(text='+ Para Llevar', icon='plus', font_size=sp(12),
@@ -998,7 +1349,8 @@ class MesasScreen(BaseScreen):
 
     def _refrescar(self):
         self.grid_mesas.clear_widgets()
-        nombres_mesas = [f'Mesa {i}' for i in range(1, self.NUM_MESAS + 1)]
+        num_mesas = GlobalData.config.get('num_mesas', 6)
+        nombres_mesas = [f'Mesa {i}' for i in range(1, num_mesas + 1)]
         for nombre in nombres_mesas:
             comanda = next((c for c in GlobalData.comandas if c['nombre'] == nombre), None)
             bg, bg_dark, txt_color, texto = self._estilo_mesa(nombre, comanda)
@@ -1079,6 +1431,14 @@ class MesasScreen(BaseScreen):
         guardar_datos()
         self._refrescar()
 
+    def abrir_config(self):
+        ConfigMesasModal(on_guardado=self._refrescar).open()
+
+    def agregar_mesa_rapida(self):
+        GlobalData.config['num_mesas'] = GlobalData.config.get('num_mesas', 6) + 1
+        guardar_datos()
+        self._refrescar()
+
 
 class ComandaScreen(BaseScreen):
     def __init__(self, **kwargs):
@@ -1122,6 +1482,12 @@ class ComandaScreen(BaseScreen):
         fila_acciones.add_widget(btn_cocina)
         fila_acciones.add_widget(btn_cancelar)
         self.content_layout.add_widget(fila_acciones)
+
+        btn_fusionar = RoundedButton(text='Unir Otra Mesa', icon='mesa', font_size=sp(12),
+                                      bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK,
+                                      size_hint_y=None, height=dp(44))
+        btn_fusionar.bind(on_release=lambda x: self.abrir_fusion())
+        self.content_layout.add_widget(btn_fusionar)
 
         btn_cobrar = RoundedButton(text='Cobrar', icon='efectivo', font_size=sp(16),
                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK,
@@ -1248,6 +1614,38 @@ class ComandaScreen(BaseScreen):
         self.comanda = None
         self.manager.current = 'mesas'
 
+    def abrir_fusion(self):
+        if not self.comanda:
+            return
+        FusionarMesaModal(self.comanda, on_elegir=self._confirmar_fusion).open()
+
+    def _confirmar_fusion(self, mesa_origen):
+        ConfirmModal(
+            titulo='Unir Mesas',
+            mensaje=f"¿Transferir todos los productos de \"{mesa_origen['nombre']}\" "
+                    f"a \"{self.comanda['nombre']}\"?\nLa mesa de origen quedará libre.",
+            texto_confirmar='Unir Mesas', icono_confirmar='check',
+            color_confirmar=Theme.PRIMARY, color_confirmar_dark=Theme.PRIMARY_DARK,
+            on_confirmar=lambda: self._fusionar(mesa_origen),
+        ).open()
+
+    def _fusionar(self, mesa_origen):
+        if not self.comanda:
+            return
+        for item in mesa_origen['items']:
+            existente = next((it for it in self.comanda['items']
+                               if it['nombre'] == item['nombre'] and it.get('nota', '') == item.get('nota', '')),
+                              None)
+            if existente:
+                existente['cantidad'] += item['cantidad']
+            else:
+                self.comanda['items'].append(dict(item))
+        if mesa_origen in GlobalData.comandas:
+            GlobalData.comandas.remove(mesa_origen)
+        guardar_datos()
+        self.banner.show(f"Se unió \"{mesa_origen['nombre']}\" a esta mesa.", 'success')
+        self._refrescar()
+
     def iniciar_cobro(self):
         if not GlobalData.caja_abierta:
             self.banner.show('Debes abrir la caja antes de cobrar.', 'error')
@@ -1256,7 +1654,7 @@ class ComandaScreen(BaseScreen):
             self.banner.show('Agrega productos antes de cobrar.', 'error')
             return
         total = sum(it['precio'] * it['cantidad'] for it in self.comanda['items'])
-        PagoModal(total=total, on_confirmar=self._elegir_liberacion).open()
+        PagoModal(total=total, items=self.comanda['items'], on_confirmar=self._elegir_liberacion).open()
 
     def _elegir_liberacion(self, metodo, monto_efectivo, monto_qr):
         total = monto_efectivo + monto_qr
@@ -1697,6 +2095,16 @@ class ReportesScreen(BaseScreen):
         fila_tabs.add_widget(self.btn_historial)
         self.content_layout.add_widget(fila_tabs)
 
+        self.fila_filtros = BoxLayout(size_hint_y=None, height=0, spacing=dp(6), opacity=0)
+        self.filtro_fecha = 'todo'
+        self.botones_filtro = {}
+        for clave, etiqueta in [('todo', 'Todo'), ('hoy', 'Hoy'), ('semana', 'Semana'), ('mes', 'Mes')]:
+            btn = RoundedButton(text=etiqueta, font_size=sp(10.5), radius=dp(8))
+            btn.bind(on_release=lambda x, c=clave: self._cambiar_filtro(c))
+            self.botones_filtro[clave] = btn
+            self.fila_filtros.add_widget(btn)
+        self.content_layout.add_widget(self.fila_filtros)
+
         self.scroll = ScrollView(size_hint=(1, 1))
         self.lista = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
         self.lista.bind(minimum_height=self.lista.setter('height'))
@@ -1704,6 +2112,7 @@ class ReportesScreen(BaseScreen):
         self.content_layout.add_widget(self.scroll)
 
         self.vista_actual = 'ranking'
+        self._pintar_filtros()
 
     def _cambiar_vista(self, vista):
         self.vista_actual = vista
@@ -1712,7 +2121,40 @@ class ReportesScreen(BaseScreen):
             btn.bg_color = Theme.PRIMARY if activo else Theme.NEUTRAL
             btn.bg_color_dark = Theme.PRIMARY_DARK if activo else Theme.NEUTRAL_DARK
             btn._color.rgba = btn.bg_color
+        mostrar_filtros = vista == 'historial'
+        self.fila_filtros.height = dp(38) if mostrar_filtros else 0
+        self.fila_filtros.opacity = 1 if mostrar_filtros else 0
         self.on_enter()
+
+    def _cambiar_filtro(self, clave):
+        self.filtro_fecha = clave
+        self._pintar_filtros()
+        self.on_enter()
+
+    def _pintar_filtros(self):
+        for clave, btn in self.botones_filtro.items():
+            activo = clave == self.filtro_fecha
+            btn.bg_color = Theme.PRIMARY if activo else Theme.NEUTRAL
+            btn.bg_color_dark = Theme.PRIMARY_DARK if activo else Theme.NEUTRAL_DARK
+            btn._color.rgba = btn.bg_color
+
+    def _fecha_en_rango(self, timestamp_iso):
+        if self.filtro_fecha == 'todo' or not timestamp_iso:
+            return True
+        try:
+            fecha_ev = datetime.fromisoformat(timestamp_iso)
+        except ValueError:
+            return True
+        ahora = datetime.now()
+        if self.filtro_fecha == 'hoy':
+            return fecha_ev.date() == ahora.date()
+        if self.filtro_fecha == 'semana':
+            inicio_semana = (ahora - timedelta(days=ahora.weekday())).replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            return fecha_ev >= inicio_semana
+        if self.filtro_fecha == 'mes':
+            return fecha_ev.year == ahora.year and fecha_ev.month == ahora.month
+        return True
 
     def on_enter(self):
         if self.vista_actual == 'ranking':
@@ -1745,12 +2187,16 @@ class ReportesScreen(BaseScreen):
 
     def _mostrar_historial(self):
         self.lista.clear_widgets()
-        eventos = [('venta', v) for v in GlobalData.historial_ventas]
-        eventos += [('gasto', g) for g in GlobalData.historial_gastos]
+        eventos = [('venta', v) for v in GlobalData.historial_ventas
+                   if self._fecha_en_rango(v.get('timestamp', ''))]
+        eventos += [('gasto', g) for g in GlobalData.historial_gastos
+                    if self._fecha_en_rango(g.get('timestamp', ''))]
         eventos.sort(key=lambda e: e[1].get('timestamp', ''), reverse=True)
 
         if not eventos:
-            self.lista.add_widget(Label(text='Todavía no hay movimientos registrados.', font_size=sp(13),
+            mensaje = ('No hay movimientos en el rango seleccionado.' if self.filtro_fecha != 'todo'
+                       else 'Todavía no hay movimientos registrados.')
+            self.lista.add_widget(Label(text=mensaje, font_size=sp(13),
                                          color=Theme.TEXT_MUTED, size_hint_y=None, height=dp(40)))
             return
 
