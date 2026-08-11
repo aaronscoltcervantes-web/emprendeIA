@@ -773,6 +773,46 @@ class PagoModal(Popup):
             self.on_confirmar_cb('MIXTO', monto_ef, monto_qr)
 
 
+class PostPagoModal(Popup):
+    """Tras confirmar el pago: ¿se libera la mesa ahora o se mantiene ocupada (ya pagada)?"""
+
+    def __init__(self, metodo, total, on_elegir, **kwargs):
+        content = BoxLayout(orientation='vertical', spacing=dp(16), padding=dp(20))
+
+        lbl = Label(text=f'Pago registrado: {total:.2f} Bs ({metodo})', font_size=sp(14.5), bold=True,
+                    color=Theme.PRIMARY, size_hint_y=None, height=dp(26), halign='center', valign='middle')
+        lbl.bind(size=lbl.setter('text_size'))
+        content.add_widget(lbl)
+
+        pregunta = Label(text='¿La mesa se retira o se queda?', font_size=sp(13.5), color=Theme.TEXT,
+                          size_hint_y=None, height=dp(22), halign='center', valign='middle')
+        pregunta.bind(size=pregunta.setter('text_size'))
+        content.add_widget(pregunta)
+
+        btn_liberar = RoundedButton(text='Marcar Pagado y Liberar Mesa', icon='check', font_size=sp(13),
+                                     bg_color=Theme.PRIMARY, bg_color_dark=Theme.PRIMARY_DARK,
+                                     size_hint_y=None, height=dp(54))
+        btn_mantener = RoundedButton(text='Marcar Pagado pero Mantener Ocupada', icon='mesa', font_size=sp(11.5),
+                                      bg_color=Theme.ACCENT_BLUE, bg_color_dark=Theme.ACCENT_BLUE_DARK,
+                                      size_hint_y=None, height=dp(54))
+        content.add_widget(btn_liberar)
+        content.add_widget(btn_mantener)
+
+        super().__init__(content=content, auto_dismiss=False, height=dp(300),
+                          **_popup_kwargs('Cobro Confirmado'), **kwargs)
+
+        def _liberar(x):
+            self.dismiss()
+            on_elegir(True)
+
+        def _mantener(x):
+            self.dismiss()
+            on_elegir(False)
+
+        btn_liberar.bind(on_release=_liberar)
+        btn_mantener.bind(on_release=_mantener)
+
+
 class TicketModal(Popup):
     """Comprobante de venta para el cliente."""
 
@@ -961,14 +1001,9 @@ class MesasScreen(BaseScreen):
         nombres_mesas = [f'Mesa {i}' for i in range(1, self.NUM_MESAS + 1)]
         for nombre in nombres_mesas:
             comanda = next((c for c in GlobalData.comandas if c['nombre'] == nombre), None)
-            ocupada = comanda is not None
-            total = sum(it['precio'] * it['cantidad'] for it in comanda['items']) if comanda else 0.0
-            texto = f"{nombre}\n" + (f"{total:.2f} Bs" if ocupada else "Libre")
+            bg, bg_dark, txt_color, texto = self._estilo_mesa(nombre, comanda)
             card = RoundedButton(
-                text=texto,
-                bg_color=Theme.WARNING if ocupada else Theme.SURFACE,
-                bg_color_dark=Theme.WARNING_DARK if ocupada else Theme.NEUTRAL_DARK,
-                text_color=Theme.TEXT if ocupada else Theme.TEXT_MUTED,
+                text=texto, bg_color=bg, bg_color_dark=bg_dark, text_color=txt_color,
                 font_size=sp(12.5), size_hint_y=None, height=dp(64), radius=Theme.RADIUS_SM,
             )
             card.bind(on_release=lambda x, n=nombre: self.abrir_mesa(n))
@@ -982,35 +1017,67 @@ class MesasScreen(BaseScreen):
                       color=Theme.TEXT_DIM, size_hint_y=None, height=dp(32))
             )
         for c in otros:
-            total = sum(it['precio'] * it['cantidad'] for it in c['items'])
+            if c.get('pagada'):
+                texto = f"{c['nombre']}  ·  PAGADO ✓  ·  toca para liberar"
+                bg_color, bg_color_dark = Theme.PRIMARY, Theme.PRIMARY_DARK
+            else:
+                total = sum(it['precio'] * it['cantidad'] for it in c['items'])
+                texto = f"{c['nombre']}  ·  {len(c['items'])} items  ·  {total:.2f} Bs"
+                bg_color, bg_color_dark = Theme.SURFACE, Theme.NEUTRAL_DARK
             row = RoundedButton(
-                text=f"{c['nombre']}  ·  {len(c['items'])} items  ·  {total:.2f} Bs",
-                icon='venta', bg_color=Theme.SURFACE, bg_color_dark=Theme.NEUTRAL_DARK,
+                text=texto, icon='venta', bg_color=bg_color, bg_color_dark=bg_color_dark,
                 text_color=Theme.TEXT, font_size=sp(12), size_hint_y=None, height=dp(46),
                 radius=Theme.RADIUS_SM,
             )
             row.bind(on_release=lambda x, n=c['nombre']: self.abrir_mesa(n))
             self.lista_otros.add_widget(row)
 
+    def _estilo_mesa(self, nombre, comanda):
+        """Devuelve (bg, bg_dark, text_color, texto) según el estado de la mesa."""
+        if comanda is None:
+            return Theme.SURFACE, Theme.NEUTRAL_DARK, Theme.TEXT_MUTED, f"{nombre}\nLibre"
+        if comanda.get('pagada'):
+            return Theme.PRIMARY, Theme.PRIMARY_DARK, Theme.TEXT, f"{nombre}\nPAGADO ✓"
+        total = sum(it['precio'] * it['cantidad'] for it in comanda['items'])
+        return Theme.WARNING, Theme.WARNING_DARK, Theme.TEXT, f"{nombre}\n{total:.2f} Bs"
+
     def nuevo_pedido(self, tipo):
         GlobalData.contador_comandas += 1
         nombre = f"{tipo} #{GlobalData.contador_comandas:03d}"
         comanda = {'id': GlobalData.contador_comandas, 'nombre': nombre, 'items': [],
-                   'hora_apertura': datetime.now().strftime('%H:%M')}
+                   'hora_apertura': datetime.now().strftime('%H:%M'), 'pagada': False}
         GlobalData.comandas.append(comanda)
         guardar_datos()
         self.abrir_mesa(nombre)
 
     def abrir_mesa(self, nombre):
         comanda = next((c for c in GlobalData.comandas if c['nombre'] == nombre), None)
+        if comanda and comanda.get('pagada'):
+            self._mostrar_modal_liberar(comanda)
+            return
         if not comanda:
             GlobalData.contador_comandas += 1
             comanda = {'id': GlobalData.contador_comandas, 'nombre': nombre, 'items': [],
-                       'hora_apertura': datetime.now().strftime('%H:%M')}
+                       'hora_apertura': datetime.now().strftime('%H:%M'), 'pagada': False}
             GlobalData.comandas.append(comanda)
             guardar_datos()
         self.manager.get_screen('comanda').abrir(comanda)
         self.manager.current = 'comanda'
+
+    def _mostrar_modal_liberar(self, comanda):
+        ConfirmModal(
+            titulo='Cuenta Saldada',
+            mensaje=f"\"{comanda['nombre']}\" ya está pagada y sigue ocupada.\n¿Liberar la mesa ahora?",
+            texto_confirmar='Liberar Mesa', icono_confirmar='check',
+            color_confirmar=Theme.PRIMARY, color_confirmar_dark=Theme.PRIMARY_DARK,
+            on_confirmar=lambda: self.liberar_mesa(comanda),
+        ).open()
+
+    def liberar_mesa(self, comanda):
+        if comanda in GlobalData.comandas:
+            GlobalData.comandas.remove(comanda)
+        guardar_datos()
+        self._refrescar()
 
 
 class ComandaScreen(BaseScreen):
@@ -1189,9 +1256,16 @@ class ComandaScreen(BaseScreen):
             self.banner.show('Agrega productos antes de cobrar.', 'error')
             return
         total = sum(it['precio'] * it['cantidad'] for it in self.comanda['items'])
-        PagoModal(total=total, on_confirmar=self._procesar_cobro).open()
+        PagoModal(total=total, on_confirmar=self._elegir_liberacion).open()
 
-    def _procesar_cobro(self, metodo, monto_efectivo, monto_qr):
+    def _elegir_liberacion(self, metodo, monto_efectivo, monto_qr):
+        total = monto_efectivo + monto_qr
+        PostPagoModal(
+            metodo=metodo, total=total,
+            on_elegir=lambda liberar: self._procesar_cobro(metodo, monto_efectivo, monto_qr, liberar),
+        ).open()
+
+    def _procesar_cobro(self, metodo, monto_efectivo, monto_qr, liberar):
         if not self.comanda:
             return
         total = sum(it['precio'] * it['cantidad'] for it in self.comanda['items'])
@@ -1205,8 +1279,16 @@ class ComandaScreen(BaseScreen):
             "monto_efectivo": monto_efectivo, "monto_qr": monto_qr,
         }
         GlobalData.historial_ventas.append(venta)
-        if self.comanda in GlobalData.comandas:
-            GlobalData.comandas.remove(self.comanda)
+
+        if liberar:
+            if self.comanda in GlobalData.comandas:
+                GlobalData.comandas.remove(self.comanda)
+        else:
+            # Queda ocupada y marcada como pagada; se vacía la cuenta ya cobrada
+            # para que, si se reabre por error, no se pueda volver a cobrar lo mismo.
+            self.comanda['items'] = []
+            self.comanda['pagada'] = True
+            self.comanda['hora_pago'] = ahora.strftime('%H:%M')
         guardar_datos()
 
         TicketModal(venta).open()
