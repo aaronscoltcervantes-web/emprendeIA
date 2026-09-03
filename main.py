@@ -1,6 +1,8 @@
 import json
 import os
+from datetime import datetime
 from kivy.app import App
+from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
@@ -8,55 +10,69 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.metrics import dp
+from kivy.core.audio import SoundLoader
 
 DATA_FILE = "data.json"
 
-class GestorSobranteApp(App):
-    def build(self):
-        self.inicializar_datos()
+class MainScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.app = App.get_running_app()
         
         root = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
 
         # Cabecera de saldos
         self.lbl_saldo = Label(
-            text=f"Saldo Disponible: {self.saldo_actual:.2f} Bs",
-            font_size='20sp',
+            text="",
+            font_size='22sp',
             size_hint_y=None,
-            height=dp(35),
+            height=dp(38),
             bold=True
         )
         root.add_widget(self.lbl_saldo)
 
-        # Aviso de presupuesto bajo
-        self.lbl_alerta = Label(
+        # Aviso grande y destacado para alertas críticas (Presupuesto bajo o Límite diario excedido)
+        self.lbl_alerta_grande = Label(
             text="",
-            font_size='13sp',
-            color=(1, 0.4, 0.4, 1),
+            font_size='16sp',
+            bold=True,
+            color=(1, 0.2, 0.2, 1),
             size_hint_y=None,
-            height=dp(25)
+            height=dp(50),
+            halign='center',
+            valign='middle'
         )
-        root.add_widget(self.lbl_alerta)
+        self.lbl_alerta_grande.bind(size=self.lbl_alerta_grande.setter('text_size'))
+        root.add_widget(self.lbl_alerta_grande)
 
-        # Sección para editar el presupuesto inicial / sobrante libre
-        layout_presupuesto = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(38))
+        # Configuración de Sobrante Total y Límite Diario en una línea
+        layout_config = BoxLayout(orientation='horizontal', spacing=dp(6), size_hint_y=None, height=dp(38))
+        
         self.txt_presupuesto = TextInput(
-            text=str(self.presupuesto_inicial),
             hint_text="Sobrante total",
             input_filter='float',
             multiline=False,
-            size_hint_x=0.65
+            size_hint_x=0.35
         )
-        btn_actualizar_presupuesto = Button(
-            text="Fijar Sobrante",
-            size_hint_x=0.35,
+        self.txt_limite_diario = TextInput(
+            hint_text="Límite diario",
+            input_filter='float',
+            multiline=False,
+            size_hint_x=0.35
+        )
+        btn_guardar_config = Button(
+            text="Fijar Límites",
+            size_hint_x=0.30,
             background_color=(0.2, 0.5, 0.8, 1)
         )
-        btn_actualizar_presupuesto.bind(on_press=self.cambiar_presupuesto)
-        layout_presupuesto.add_widget(self.txt_presupuesto)
-        layout_presupuesto.add_widget(btn_actualizar_presupuesto)
-        root.add_widget(layout_presupuesto)
+        btn_guardar_config.bind(on_press=self.cambiar_configuracion)
+        
+        layout_config.add_widget(self.txt_presupuesto)
+        layout_config.add_widget(self.txt_limite_diario)
+        layout_config.add_widget(btn_guardar_config)
+        root.add_widget(layout_config)
 
-        # Entradas de categoría y monto en una sola línea compacta
+        # Entradas de categoría y monto
         layout_inputs = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(38))
         self.txt_categoria = TextInput(
             hint_text="Categoría (ej. Antojos)",
@@ -84,101 +100,111 @@ class GestorSobranteApp(App):
         self.lbl_mensaje = Label(text="", font_size='13sp', size_hint_y=None, height=dp(25))
         root.add_widget(self.lbl_mensaje)
 
-        # Historial desplazable con resumen por categorías
-        lbl_historial_titulo = Label(
-            text="Historial y Resumen de Gastos",
+        # Resumen actual en curso
+        lbl_act_title = Label(
+            text="Gastos del Ciclo Actual",
             font_size='15sp',
             size_hint_y=None,
             height=dp(28),
             bold=True
         )
-        root.add_widget(lbl_historial_titulo)
+        root.add_widget(lbl_act_title)
 
         scroll = ScrollView(size_hint=(1, 1))
-        self.layout_historial = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
-        self.layout_historial.bind(minimum_height=self.layout_historial.setter('height'))
-        scroll.add_widget(self.layout_historial)
+        self.layout_actual = GridLayout(cols=1, spacing=dp(4), size_hint_y=None)
+        self.layout_actual.bind(minimum_height=self.layout_actual.setter('height'))
+        scroll.add_widget(self.layout_actual)
         root.add_widget(scroll)
 
-        # Botón para reiniciar ciclo o periodo
-        btn_reiniciar = Button(
-            text="Iniciar Nuevo Ciclo (Reset)",
-            size_hint_y=None,
-            height=dp(40),
+        # Botones de navegación y cierre de ciclo
+        layout_botones = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(40))
+        
+        btn_ver_historial = Button(
+            text="Ver Historial",
+            background_color=(0.3, 0.4, 0.6, 1)
+        )
+        btn_ver_historial.bind(on_press=self.ir_a_historial)
+        
+        btn_cerrar_ciclo = Button(
+            text="Cerrar y Archivar Ciclo",
             background_color=(0.8, 0.3, 0.3, 1)
         )
-        btn_reiniciar.bind(on_press=self.reiniciar_ciclo)
-        root.add_widget(btn_reiniciar)
+        btn_cerrar_ciclo.bind(on_press=self.cerrar_y_archivar_ciclo)
 
-        self.actualizar_interfaz_historial()
-        self.verificar_alerta()
-        return root
+        layout_botones.add_widget(btn_ver_historial)
+        layout_botones.add_widget(btn_cerrar_ciclo)
+        root.add_widget(layout_botones)
 
-    def inicializar_datos(self):
-        if not os.path.exists(DATA_FILE):
-            datos_iniciales = {
-                "presupuesto_inicial": 1000.0,
-                "saldo_actual": 1000.0,
-                "gastos": []
-            }
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(datos_iniciales, f, indent=4)
-        
-        self.cargar_datos()
+        self.add_widget(root)
 
-    def cargar_datos(self):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            self.presupuesto_inicial = data.get("presupuesto_inicial", 1000.0)
-            self.saldo_actual = data.get("saldo_actual", 1000.0)
-            self.gastos = data.get("gastos", [])
+    def on_enter(self):
+        self.actualizar_vista()
 
-    def guardar_datos(self):
-        data = {
-            "presupuesto_inicial": self.presupuesto_inicial,
-            "saldo_actual": self.saldo_actual,
-            "gastos": self.gastos
-        }
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-
-    def cambiar_presupuesto(self, instance):
-        val_str = self.txt_presupuesto.text.strip()
+    def reproducir_sonido(self, archivo):
         try:
-            nuevo_presupuesto = float(val_str)
+            sonido = SoundLoader.load(archivo)
+            if sonido:
+                sonido.play()
+        except Exception:
+            pass
+
+    def actualizar_vista(self):
+        self.app.cargar_datos()
+        self.txt_presupuesto.text = str(self.app.presupuesto_inicial)
+        self.txt_limite_diario.text = str(self.app.limite_diario)
+        self.lbl_saldo.text = f"Saldo Disponible: {self.app.saldo_actual:.2f} Bs"
+        self.verificar_alertas_y_gastos_diarios()
+        self.actualizar_lista_actual()
+
+    def verificar_alertas_y_gastos_diarios(self):
+        hoy_str = datetime.now().strftime("%Y-%m-%d")
+        gasto_hoy = sum(g["monto"] for g in self.app.gastos if g.get("fecha", "").startswith(hoy_str))
+        
+        alertas = []
+        
+        # Validación de gasto diario alto
+        if gasto_hoy >= self.app.limite_diario and self.app.limite_diario > 0:
+            alertas.append(f"🚨 ¡Límite diario superado! Hoy gastaste {gasto_hoy:.2f} Bs.")
+            self.reproducir_sonido("alerta.wav")
+        
+        # Validación de saldo general bajo o agotado
+        if self.app.saldo_actual <= 0:
+            alertas.append("⚠️ ¡Te has quedado sin dinero sobrante!")
+            self.reproducir_sonido("alerta.wav")
+        elif self.app.presupuesto_inicial > 0 and (self.app.saldo_actual / self.app.presupuesto_inicial) * 100 <= 20:
+            alertas.append("⚠️ Alerta: Queda menos del 20% de tu sobrante.")
+
+        if alertas:
+            self.lbl_alerta_grande.text = "\n".join(alertas)
+        else:
+            self.lbl_alerta_grande.text = ""
+
+    def cambiar_configuracion(self, instance):
+        try:
+            nuevo_presupuesto = float(self.txt_presupuesto.text.strip())
+            nuevo_limite = float(self.txt_limite_diario.text.strip())
         except ValueError:
-            self.lbl_mensaje.text = "Error: Ingresa un monto válido."
+            self.lbl_mensaje.text = "Error: Ingresa montos válidos."
             return
 
-        if nuevo_presupuesto < 0:
-            self.lbl_mensaje.text = "Error: El monto no puede ser negativo."
+        if nuevo_presupuesto < 0 or nuevo_limite < 0:
+            self.lbl_mensaje.text = "Error: Los montos no pueden ser negativos."
             return
 
-        total_gastos = sum(g["monto"] for g in self.gastos)
-        self.presupuesto_inicial = nuevo_presupuesto
-        self.saldo_actual = self.presupuesto_inicial - total_gastos
+        total_gastos = sum(g["monto"] for g in self.app.gastos)
+        self.app.presupuesto_inicial = nuevo_presupuesto
+        self.app.limite_diario = nuevo_limite
+        self.app.saldo_actual = self.app.presupuesto_inicial - total_gastos
 
-        if self.saldo_actual < 0:
-            self.saldo_actual = 0
-            self.lbl_mensaje.text = "Alerta: El nuevo sobrante es menor que tus gastos."
+        if self.app.saldo_actual < 0:
+            self.app.saldo_actual = 0
+            self.lbl_mensaje.text = "Alerta: El sobrante es menor que tus gastos."
         else:
-            self.lbl_mensaje.text = f"Sobrante actualizado a {self.presupuesto_inicial:.2f} Bs."
+            self.lbl_mensaje.text = "Límites actualizados correctamente."
 
-        self.guardar_datos()
-        self.lbl_saldo.text = f"Saldo Disponible: {self.saldo_actual:.2f} Bs"
-        self.verificar_alerta()
-
-    def verificar_alerta(self):
-        if self.presupuesto_inicial > 0:
-            porcentaje_restante = (self.saldo_actual / self.presupuesto_inicial) * 100
-            if self.saldo_actual <= 0:
-                self.lbl_alerta.text = "¡Atención! Te has quedado sin dinero sobrante."
-            elif porcentaje_restante <= 20 or self.saldo_actual <= 100:
-                self.lbl_alerta.text = "⚠️ Alerta: Te queda poco presupuesto (menos del 20%)."
-            else:
-                self.lbl_alerta.text = ""
-        else:
-            self.lbl_alerta.text = ""
+        self.app.guardar_datos()
+        self.lbl_saldo.text = f"Saldo Disponible: {self.app.saldo_actual:.2f} Bs"
+        self.verificar_alertas_y_gastos_diarios()
 
     def registrar_gasto(self, instance):
         cat = self.txt_categoria.text.strip()
@@ -198,64 +224,186 @@ class GestorSobranteApp(App):
             self.lbl_mensaje.text = "Error: El monto debe ser mayor a cero."
             return
 
-        if monto > self.saldo_actual:
+        if monto > self.app.saldo_actual:
             self.lbl_mensaje.text = "Alerta: ¡El gasto supera tu sobrante disponible!"
             return
 
-        self.saldo_actual -= monto
-        self.gastos.append({"categoria": cat, "monto": monto})
-        self.guardar_datos()
+        self.app.saldo_actual -= monto
+        fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.app.gastos.append({"categoria": cat, "monto": monto, "fecha": fecha_actual})
+        self.app.guardar_datos()
 
-        self.lbl_saldo.text = f"Saldo Disponible: {self.saldo_actual:.2f} Bs"
+        self.reproducir_sonido("exito.wav")
+        self.lbl_saldo.text = f"Saldo Disponible: {self.app.saldo_actual:.2f} Bs"
         self.lbl_mensaje.text = f"Gasto registrado: {monto:.2f} Bs en '{cat}'."
         self.txt_categoria.text = ""
         self.txt_monto.text = ""
-        self.verificar_alerta()
-        self.actualizar_interfaz_historial()
+        self.verificar_alertas_y_gastos_diarios()
+        self.actualizar_lista_actual()
 
-    def reiniciar_ciclo(self, instance):
-        self.gastos = []
-        self.saldo_actual = self.presupuesto_inicial
-        self.guardar_datos()
-        
-        self.lbl_saldo.text = f"Saldo Disponible: {self.saldo_actual:.2f} Bs"
-        self.lbl_mensaje.text = "Ciclo reiniciado correctamente."
-        self.verificar_alerta()
-        self.actualizar_interfaz_historial()
-
-    def actualizar_interfaz_historial(self):
-        self.layout_historial.clear_widgets()
-        
-        if not self.gastos:
-            lbl = Label(
-                text="No hay gastos registrados en este ciclo.", 
-                size_hint_y=None, 
-                height=dp(30), 
-                color=(0.6, 0.6, 0.6, 1)
-            )
-            self.layout_historial.add_widget(lbl)
+    def actualizar_lista_actual(self):
+        self.layout_actual.clear_widgets()
+        if not self.app.gastos:
+            self.layout_actual.add_widget(Label(text="No hay gastos en este ciclo.", size_hint_y=None, height=dp(30), color=(0.6, 0.6, 0.6, 1)))
             return
 
-        # Resumen por categoría
         resumen_cat = {}
-        for g in self.gastos:
-            cat = g["categoria"]
-            monto = g["monto"]
-            resumen_cat[cat] = resumen_cat.get(cat, 0.0) + monto
+        for g in self.app.gastos:
+            resumen_cat[g["categoria"]] = resumen_cat.get(g["categoria"], 0.0) + g["monto"]
 
-        lbl_res_title = Label(text="• Totales por Categoría:", size_hint_y=None, height=dp(25), bold=True)
-        self.layout_historial.add_widget(lbl_res_title)
-
+        self.layout_actual.add_widget(Label(text="• Totales por Categoría:", size_hint_y=None, height=dp(25), bold=True))
         for cat, total in resumen_cat.items():
-            lbl_cat = Label(text=f"   - {cat}: {total:.2f} Bs", size_hint_y=None, height=dp(22))
-            self.layout_historial.add_widget(lbl_cat)
+            self.layout_actual.add_widget(Label(text=f"   - {cat}: {total:.2f} Bs", size_hint_y=None, height=dp(22)))
 
-        lbl_det_title = Label(text="• Últimos Movimientos:", size_hint_y=None, height=dp(28), bold=True)
-        self.layout_historial.add_widget(lbl_det_title)
+        self.layout_actual.add_widget(Label(text="• Últimos Movimientos:", size_hint_y=None, height=dp(28), bold=True))
+        for g in reversed(self.app.gastos):
+            fecha_str = f" [{g.get('fecha', '')}]" if 'fecha' in g else ""
+            self.layout_actual.add_widget(Label(text=f"   [{g['categoria']}]  →  {g['monto']:.2f} Bs{fecha_str}", size_hint_y=None, height=dp(22)))
 
-        for g in reversed(self.gastos):
-            lbl_gasto = Label(text=f"   [{g['categoria']}]  →  {g['monto']:.2f} Bs", size_hint_y=None, height=dp(22))
-            self.layout_historial.add_widget(lbl_gasto)
+    def cerrar_y_archivar_ciclo(self, instance):
+        ciclo_archivado = {
+            "fecha_cierre": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "presupuesto_inicial": self.app.presupuesto_inicial,
+            "limite_diario": self.app.limite_diario,
+            "saldo_restante": self.app.saldo_actual,
+            "gastos": list(self.app.gastos)
+        }
+        self.app.historial_ciclos.append(ciclo_archivado)
+        self.app.gastos = []
+        self.app.saldo_actual = self.app.presupuesto_inicial
+        self.app.guardar_datos()
+        
+        self.lbl_mensaje.text = "Ciclo cerrado y archivado correctamente."
+        self.actualizar_vista()
+
+    def ir_a_historial(self, instance):
+        self.manager.current = 'history'
+
+class HistoryScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.app = App.get_running_app()
+        
+        root = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
+
+        lbl_titulo = Label(
+            text="Historial de Ciclos Archivados",
+            font_size='20sp',
+            size_hint_y=None,
+            height=dp(40),
+            bold=True
+        )
+        root.add_widget(lbl_titulo)
+
+        scroll = ScrollView(size_hint=(1, 1))
+        self.layout_historial = GridLayout(cols=1, spacing=dp(8), size_hint_y=None)
+        self.layout_historial.bind(minimum_height=self.layout_historial.setter('height'))
+        scroll.add_widget(self.layout_historial)
+        root.add_widget(scroll)
+
+        btn_volver = Button(
+            text="Volver al Panel Principal",
+            size_hint_y=None,
+            height=dp(45),
+            background_color=(0.2, 0.5, 0.8, 1)
+        )
+        btn_volver.bind(on_press=self.volver_principal)
+        root.add_widget(btn_volver)
+
+        self.add_widget(root)
+
+    def on_enter(self):
+        self.actualizar_historial_vista()
+
+    def actualizar_historial_vista(self):
+        self.app.cargar_datos()
+        self.layout_historial.clear_widgets()
+
+        if not self.app.historial_ciclos:
+            self.layout_historial.add_widget(Label(
+                text="Aún no hay ciclos archivados.",
+                size_hint_y=None,
+                height=dp(40),
+                color=(0.6, 0.6, 0.6, 1)
+            ))
+            return
+
+        for i, ciclo in enumerate(reversed(self.app.historial_ciclos)):
+            num_gastos = len(ciclo["gastos"])
+            altura_bloque = dp(75 + (num_gastos * 22) + 30)
+            
+            box_ciclo = BoxLayout(orientation='vertical', size_hint_y=None, height=altura_bloque, padding=dp(5), spacing=dp(3))
+
+            lbl_encabezado = Label(
+                text=f"🗓 Ciclo #{len(self.app.historial_ciclos) - i} - Fecha: {ciclo['fecha_cierre']}",
+                size_hint_y=None,
+                height=dp(25),
+                bold=True,
+                color=(0.2, 0.7, 0.4, 1)
+            )
+            box_ciclo.add_widget(lbl_encabezado)
+
+            lbl_resumen = Label(
+                text=f"   Sobrante: {ciclo['presupuesto_inicial']:.2f} Bs | Límite Diario: {ciclo.get('limite_diario', 0):.2f} Bs | Restante: {ciclo['saldo_restante']:.2f} Bs",
+                size_hint_y=None,
+                height=dp(22)
+            )
+            box_ciclo.add_widget(lbl_resumen)
+
+            if ciclo["gastos"]:
+                box_ciclo.add_widget(Label(text="   Gastos:", size_hint_y=None, height=dp(20), bold=True))
+                for g in ciclo["gastos"]:
+                    fecha_g = f" [{g.get('fecha', '')}]" if 'fecha' in g else ""
+                    box_ciclo.add_widget(Label(text=f"      • [{g['categoria']}] {g['monto']:.2f} Bs{fecha_g}", size_hint_y=None, height=dp(20)))
+            else:
+                box_ciclo.add_widget(Label(text="   Sin gastos registrados.", size_hint_y=None, height=dp(20)))
+
+            box_ciclo.add_widget(Label(text="--------------------------------------------------", size_hint_y=None, height=dp(15), color=(0.4, 0.4, 0.4, 1)))
+            self.layout_historial.add_widget(box_ciclo)
+
+    def volver_principal(self, instance):
+        self.manager.current = 'main'
+
+class GestorSobranteApp(App):
+    def build(self):
+        self.inicializar_datos()
+        sm = ScreenManager()
+        sm.add_widget(MainScreen(name='main'))
+        sm.add_widget(HistoryScreen(name='history'))
+        return sm
+
+    def inicializar_datos(self):
+        if not os.path.exists(DATA_FILE):
+            datos_iniciales = {
+                "presupuesto_inicial": 1000.0,
+                "limite_diario": 200.0,
+                "saldo_actual": 1000.0,
+                "gastos": [],
+                "historial_ciclos": []
+            }
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(datos_iniciales, f, indent=4)
+        self.cargar_datos()
+
+    def cargar_datos(self):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            self.presupuesto_inicial = data.get("presupuesto_inicial", 1000.0)
+            self.limite_diario = data.get("limite_diario", 200.0)
+            self.saldo_actual = data.get("saldo_actual", 1000.0)
+            self.gastos = data.get("gastos", [])
+            self.historial_ciclos = data.get("historial_ciclos", [])
+
+    def guardar_datos(self):
+        data = {
+            "presupuesto_inicial": self.presupuesto_inicial,
+            "limite_diario": self.limite_diario,
+            "saldo_actual": self.saldo_actual,
+            "gastos": self.gastos,
+            "historial_ciclos": self.historial_ciclos
+        }
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
 
 if __name__ == '__main__':
     GestorSobranteApp().run()
