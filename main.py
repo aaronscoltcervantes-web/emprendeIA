@@ -77,7 +77,7 @@ MDScreen:
                 icon: "content-save"
                 size_hint_x: 1
                 on_release: app.save_record()
-                md_bg_color: app.theme_cls.primary_color
+                md_bg_color: self.theme_cls.primary_color
 
             # Botón Compartir / Enviar Datos
             MDRaisedButton:
@@ -85,14 +85,14 @@ MDScreen:
                 icon: "share-variant"
                 size_hint_x: 1
                 on_release: app.share_last_record()
-                md_bg_color: app.theme_cls.accent_color
+                md_bg_color: self.theme_cls.accent_color
 '''
 
 class OpticaApp(MDApp):
     dialog = None
 
     def build(self):
-        # Solicitud segura de permisos dentro del ciclo de vida de la app
+        # Solicitud segura de permisos dentro del ciclo de vida de la app en Android
         if platform == 'android':
             from android.permissions import request_permissions, Permission
             request_permissions([
