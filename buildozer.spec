@@ -18,11 +18,10 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning
 version = 0.1
 
-# (list) Application requirements
-requirements = python3,kivy,kivymd,plyer
+# (list) Application requirements (¡pillow es obligatorio para KivyMD!)
+requirements = python3,kivy,kivymd,pillow,plyer
 
-# (list) Permissions
-# ¡Vital para permitir el acceso a la cámara y el almacenamiento!
+# (list) Permissions de Android (¡Vital para la cámara y el almacenamiento!)
 android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 # (str) Supported orientations
