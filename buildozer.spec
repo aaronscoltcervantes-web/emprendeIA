@@ -1,13 +1,13 @@
 [app]
 
 # (str) Title of your application
-title = Mi Aplicacion
+title = Registro Óptica
 
 # (str) Package name
-package.name = myapp
+package.name = registrooptica
 
 # (str) Package domain (needed for android/ios packaging)
-package.domain = org.ejemplo
+package.domain = org.optica
 
 # (str) Source code where the main.py live
 source.dir = .
@@ -18,8 +18,12 @@ source.include_exts = py,png,jpg,kv,atlas
 # (str) Application versioning
 version = 0.1
 
-# (list) Application requirements corregidos
-requirements = python3, kivy
+# (list) Application requirements
+requirements = python3,kivy,kivymd,plyer
+
+# (list) Permissions
+# ¡Vital para permitir el acceso a la cámara y el almacenamiento!
+android.permissions = CAMERA,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
 # (str) Supported orientations
 orientation = portrait
