@@ -27,9 +27,9 @@ jobs:
     - name: Dependencias del sistema
       run: |
         sudo apt-get update
-        sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
-          libffi-dev libssl-dev
+        sudo apt-get install -y git zip unzip autoconf automake libtool libtool-bin \
+          libltdl-dev pkg-config zlib1g-dev libncurses-dev libtinfo6 cmake \
+          libffi-dev libssl-dev build-essential ccache
 
     - name: Cache de Buildozer
       uses: actions/cache@v4
@@ -37,7 +37,7 @@ jobs:
         path: |
           ~/.buildozer
           .buildozer
-        key: buildozer-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-v2-${{ hashFiles('buildozer.spec') }}
 
     - name: Instalar Buildozer
       run: |
@@ -45,7 +45,16 @@ jobs:
         pip install buildozer "cython<3" virtualenv
 
     - name: Compilar APK
-      run: buildozer -v android debug
+      run: |
+        set -o pipefail
+        buildozer -v android debug 2>&1 | tee build.log
+
+    - name: Subir log si falla
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
 
     - name: Subir APK
       uses: actions/upload-artifact@v4
